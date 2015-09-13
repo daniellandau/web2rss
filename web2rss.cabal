@@ -20,6 +20,13 @@ library
                      , http-conduit
                      , tagsoup
                      , bytestring
+                     , persistent-mysql
+                     , persistent
+                     , persistent-template
+                     , time
+                     , text
+                     , monad-logger
+                     , transformers
   default-language:    Haskell2010
 
 executable web2rss-exe
