@@ -19,13 +19,20 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString as B
 import Text.StringLike
 import Data.Char (chr)
+import Data.Maybe
 import Database.Persist.Quasi
 import Database.Persist.MySQL
 import Database.Persist.TH
 import Data.Time.Clock (UTCTime, getCurrentTime)
+import Data.Time.Format
+import System.Locale
 import Data.Text as T (Text, pack, unpack)
 import Control.Monad.IO.Class  (liftIO)
 import Control.Monad.Logger (runStderrLoggingT)
+import Text.Feed.Constructor
+import Text.Feed.Export
+import Text.XML.Light.Output
+import Text.Feed.Types
 
 fetch :: Text -> IO B.ByteString
 fetch url = do
@@ -47,11 +54,11 @@ share [ mkPersist sqlSettings
       ]
   $(persistFileWith lowerCaseSettings "models")
 
-getLatest :: Text -> IO (Maybe B.ByteString)
-getLatest url = runStderrLoggingT $ withMySQLConn defaultConnectInfo $ \connection ->
+getSaved :: Text -> IO [Page]
+getSaved url = runStderrLoggingT $ withMySQLConn defaultConnectInfo $ \connection ->
   liftIO $ flip runSqlConn connection $ do
-    pageEntity <- selectFirst [PageUrl ==. url] [Desc PageFetched]
-    return $ fmap (\(Entity _ page) -> pageContent page) pageEntity
+    pageEntities <- selectList [PageUrl ==. url] [Desc PageFetched]
+    return $ fmap (\(Entity _ page) -> page) pageEntities
 
 
 save :: Page -> IO ()
@@ -63,14 +70,34 @@ migration =
   runStderrLoggingT $ withMySQLConn defaultConnectInfo $ \connection ->
   liftIO (runSqlConn (runMigration migrateAll) connection)
 
+createFeed :: Feed
+createFeed = withFeedTitle "Changes in the followed pages" $ newFeed AtomKind
+
+
+format :: UTCTime -> String
+format = formatTime defaultTimeLocale rfc822DateFormat
+
+makeItem :: Text -> UTCTime -> Item
+makeItem url when =
+  let item   = newItem AtomKind
+      item'  = withItemPubDate (format when) item
+      item'' = withItemTitle (T.unpack url ++ " has changed") item'
+  in item''
+
+prettyPrintFeed :: Feed -> String
+prettyPrintFeed = ppElement . xmlFeed
 
 someFunc :: IO String
 someFunc = do
-  let url = "https://landau.fi"
+  let url = "https://extensions.gnome.org/extension/973/switcher/"
   content <- fetch url
   now <- getCurrentTime
-  latestSaved <- getLatest url
-  let isSame = maybe False (== content) latestSaved
-  if isSame
-    then return "They are the same"
-    else save (Page url content now) >> return "They differ"
+  saved <- getSaved url
+  let latestSaved = listToMaybe saved
+  let emptyFeed = createFeed
+  let oldItems = map (\page -> makeItem url (pageFetched page)) saved
+  let isSame = maybe False (== content) (fmap pageContent latestSaved)
+  feed <- if isSame
+    then return (withFeedItems oldItems $ withFeedLastUpdate (format (maybe now pageFetched latestSaved)) emptyFeed)
+    else save (Page url content now) >> return (withFeedItems (makeItem url now : oldItems) $ withFeedLastUpdate (format now) emptyFeed)
+  return (prettyPrintFeed feed)

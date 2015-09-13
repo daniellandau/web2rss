@@ -1,5 +1,6 @@
 flags: {}
 packages:
 - '.'
-extra-deps: []
+extra-deps:
+  - feed-0.3.10.1
 resolver: lts-2.21
