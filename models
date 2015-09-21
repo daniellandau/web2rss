@@ -2,3 +2,4 @@ Page
   url     Text
   content B.ByteString
   fetched UTCTime
+  uuid    Text

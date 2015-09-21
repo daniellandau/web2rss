@@ -33,6 +33,8 @@ import Text.Feed.Constructor
 import Text.Feed.Export
 import Text.XML.Light.Output
 import Text.Feed.Types
+import Data.UUID.V4 as V4
+import Data.UUID
 
 fetch :: Text -> IO B.ByteString
 fetch url = do
@@ -54,20 +56,23 @@ share [ mkPersist sqlSettings
       ]
   $(persistFileWith lowerCaseSettings "models")
 
+
+myConnectInfo = defaultConnectInfo { connectUser = "web2rss", connectDatabase = "web2rss" }
+
 getSaved :: Text -> IO [Page]
-getSaved url = runStderrLoggingT $ withMySQLConn defaultConnectInfo $ \connection ->
+getSaved url = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO $ flip runSqlConn connection $ do
     pageEntities <- selectList [PageUrl ==. url] [Desc PageFetched]
     return $ fmap (\(Entity _ page) -> page) pageEntities
 
 
 save :: Page -> IO ()
-save page = runStderrLoggingT $ withMySQLConn defaultConnectInfo $ \connection ->
+save page = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO $ runSqlConn (insert page) connection >> return ()
 
 migration :: IO ()
 migration =
-  runStderrLoggingT $ withMySQLConn defaultConnectInfo $ \connection ->
+  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO (runSqlConn (runMigration migrateAll) connection)
 
 createFeed :: Feed
@@ -77,12 +82,11 @@ createFeed = withFeedTitle "Changes in the followed pages" $ newFeed AtomKind
 format :: UTCTime -> String
 format = formatTime defaultTimeLocale rfc822DateFormat
 
-makeItem :: Text -> UTCTime -> Item
-makeItem url when =
-  let item   = newItem AtomKind
-      item'  = withItemPubDate (format when) item
-      item'' = withItemTitle (T.unpack url ++ " has changed") item'
-  in item''
+makeItem :: Text -> UTCTime -> Text -> Item
+makeItem url when id =
+  withItemPubDate (format when)
+  . withItemTitle (T.unpack url ++ " has changed")
+  . withItemId False ("uurn:uuid:" ++ (T.unpack id)) $ newItem AtomKind
 
 prettyPrintFeed :: Feed -> String
 prettyPrintFeed = ppElement . xmlFeed
@@ -95,9 +99,12 @@ someFunc = do
   saved <- getSaved url
   let latestSaved = listToMaybe saved
   let emptyFeed = createFeed
-  let oldItems = map (\page -> makeItem url (pageFetched page)) saved
+  let oldItems = map (\page -> makeItem url (pageFetched page) (pageUuid page)) saved
   let isSame = maybe False (== content) (fmap pageContent latestSaved)
   feed <- if isSame
     then return (withFeedItems oldItems $ withFeedLastUpdate (format (maybe now pageFetched latestSaved)) emptyFeed)
-    else save (Page url content now) >> return (withFeedItems (makeItem url now : oldItems) $ withFeedLastUpdate (format now) emptyFeed)
+    else do
+            id <- V4.nextRandom
+            save (Page url content now (toText id))
+            return (withFeedItems (makeItem url now (toText id) : oldItems) $ withFeedLastUpdate (format now) emptyFeed)
   return (prettyPrintFeed feed)
