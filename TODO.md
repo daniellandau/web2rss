@@ -1,4 +1,3 @@
-* Multi-URL
 * Configurable with cmd line
 * Configurable with .yml
 * Own HTTP server

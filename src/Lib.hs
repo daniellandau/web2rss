@@ -35,6 +35,9 @@ import Text.XML.Light.Output
 import Text.Feed.Types
 import Data.UUID.V4 as V4
 import Data.UUID
+import Data.List (sort)
+import qualified Text.Atom.Feed as AFeed
+import qualified Text.Feed.Types as FTypes
 
 fetch :: Text -> IO B.ByteString
 fetch url = do
@@ -91,9 +94,8 @@ makeItem url when id =
 prettyPrintFeed :: Feed -> String
 prettyPrintFeed = ppElement . xmlFeed
 
-someFunc :: IO String
-someFunc = do
-  let url = "https://extensions.gnome.org/extension/973/switcher/"
+itemsForUrl :: Text -> IO [Item]
+itemsForUrl url = do
   content <- fetch url
   now <- getCurrentTime
   saved <- getSaved url
@@ -101,10 +103,17 @@ someFunc = do
   let emptyFeed = createFeed
   let oldItems = map (\page -> makeItem url (pageFetched page) (pageUuid page)) saved
   let isSame = maybe False (== content) (fmap pageContent latestSaved)
-  feed <- if isSame
-    then return (withFeedItems oldItems $ withFeedLastUpdate (format (maybe now pageFetched latestSaved)) emptyFeed)
+  if isSame
+    then return oldItems
     else do
-            id <- V4.nextRandom
-            save (Page url content now (toText id))
-            return (withFeedItems (makeItem url now (toText id) : oldItems) $ withFeedLastUpdate (format now) emptyFeed)
+      id <- V4.nextRandom
+      save (Page url content now (toText id))
+      return (makeItem url now (toText id) : oldItems)
+
+
+urls = ["http://whatif.xkcd.com", "https://landau.fi"]
+someFunc :: IO String
+someFunc = do
+  items <- mapM itemsForUrl urls >>= return . concat
+  let feed = withFeedItems items $ withFeedLastUpdate (head . reverse . sort . (map (\(FTypes.AtomItem entry) -> AFeed.entryUpdated entry)) $ items) createFeed
   return (prettyPrintFeed feed)
