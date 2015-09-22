@@ -39,7 +39,6 @@ import Data.List (sort)
 import qualified Text.Atom.Feed as AFeed
 import qualified Text.Feed.Types as FTypes
 
-urls = ["http://whatif.xkcd.com", "https://landau.fi"]
 
 fetch :: Text -> IO B.ByteString
 fetch url = do
@@ -111,8 +110,8 @@ itemsForUrl myConnectInfo url = do
       return (makeItem url now (toText id) : oldItems)
 
 
-someFunc :: ConnectInfo -> IO String
-someFunc myConnectInfo = do
+someFunc :: ConnectInfo -> [Text] -> IO String
+someFunc myConnectInfo urls = do
   items <- mapM (itemsForUrl myConnectInfo) urls >>= return . concat
   let feed = withFeedItems items $ withFeedLastUpdate (head . reverse . sort . (map (\(FTypes.AtomItem entry) -> AFeed.entryUpdated entry)) $ items) createFeed
   return (prettyPrintFeed feed)
