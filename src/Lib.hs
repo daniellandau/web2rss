@@ -39,6 +39,8 @@ import Data.List (sort)
 import qualified Text.Atom.Feed as AFeed
 import qualified Text.Feed.Types as FTypes
 
+urls = ["http://whatif.xkcd.com", "https://landau.fi"]
+
 fetch :: Text -> IO B.ByteString
 fetch url = do
   response <- simpleHttp $ T.unpack url
@@ -60,21 +62,19 @@ share [ mkPersist sqlSettings
   $(persistFileWith lowerCaseSettings "models")
 
 
-myConnectInfo = defaultConnectInfo { connectUser = "web2rss", connectDatabase = "web2rss" }
-
-getSaved :: Text -> IO [Page]
-getSaved url = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
+getSaved :: ConnectInfo -> Text -> IO [Page]
+getSaved myConnectInfo url = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO $ flip runSqlConn connection $ do
     pageEntities <- selectList [PageUrl ==. url] [Desc PageFetched]
     return $ fmap (\(Entity _ page) -> page) pageEntities
 
 
-save :: Page -> IO ()
-save page = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
+save :: ConnectInfo -> Page -> IO ()
+save myConnectInfo page = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO $ runSqlConn (insert page) connection >> return ()
 
-migration :: IO ()
-migration =
+migration :: ConnectInfo -> IO ()
+migration myConnectInfo =
   runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO (runSqlConn (runMigration migrateAll) connection)
 
@@ -94,11 +94,11 @@ makeItem url when id =
 prettyPrintFeed :: Feed -> String
 prettyPrintFeed = ppElement . xmlFeed
 
-itemsForUrl :: Text -> IO [Item]
-itemsForUrl url = do
+itemsForUrl :: ConnectInfo -> Text -> IO [Item]
+itemsForUrl myConnectInfo url = do
   content <- fetch url
   now <- getCurrentTime
-  saved <- getSaved url
+  saved <- getSaved myConnectInfo url
   let latestSaved = listToMaybe saved
   let emptyFeed = createFeed
   let oldItems = map (\page -> makeItem url (pageFetched page) (pageUuid page)) saved
@@ -107,13 +107,12 @@ itemsForUrl url = do
     then return oldItems
     else do
       id <- V4.nextRandom
-      save (Page url content now (toText id))
+      save myConnectInfo (Page url content now (toText id))
       return (makeItem url now (toText id) : oldItems)
 
 
-urls = ["http://whatif.xkcd.com", "https://landau.fi"]
-someFunc :: IO String
-someFunc = do
-  items <- mapM itemsForUrl urls >>= return . concat
+someFunc :: ConnectInfo -> IO String
+someFunc myConnectInfo = do
+  items <- mapM (itemsForUrl myConnectInfo) urls >>= return . concat
   let feed = withFeedItems items $ withFeedLastUpdate (head . reverse . sort . (map (\(FTypes.AtomItem entry) -> AFeed.entryUpdated entry)) $ items) createFeed
   return (prettyPrintFeed feed)
