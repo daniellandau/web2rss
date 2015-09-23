@@ -3,3 +3,6 @@ Page
   content B.ByteString
   fetched UTCTime
   uuid    Text
+
+FeedInfo
+  uuid    Text
