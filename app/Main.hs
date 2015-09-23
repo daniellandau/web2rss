@@ -3,16 +3,19 @@ module Main where
 
 import Lib
 import Database.Persist.MySQL
-import Data.Text (Text)
-
-myConnectInfo :: ConnectInfo
-myConnectInfo = defaultConnectInfo { connectUser = "web2rss", connectDatabase = "web2rss" }
-
-urls :: [Text]
-urls = ["http://whatif.xkcd.com", "https://landau.fi", "https://extensions.gnome.org/comments/all/?pk=973&all=false"]
+import Data.Text (pack)
+import System.Environment
 
 main :: IO ()
 main = do
-  migration myConnectInfo
-  feedText <- someFunc myConnectInfo urls
+  user <- lookupEnv "USER"
+  db <- lookupEnv "DB"
+  password <- lookupEnv "PASSWORD"
+  urls <- fmap ((map pack) . words) $ getEnv "URLS"
+  let connectInfo = defaultConnectInfo { connectUser = maybe "web2rss" id user
+                                       , connectPassword = maybe "" id password
+                                       , connectDatabase = maybe "web2rss" id db
+                                       }
+  migration connectInfo
+  feedText <- someFunc connectInfo urls
   putStrLn feedText
