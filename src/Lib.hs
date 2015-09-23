@@ -35,20 +35,26 @@ import Text.XML.Light.Output
 import Text.Feed.Types
 import Data.UUID.V4 as V4
 import Data.UUID
-import Data.List (sort)
+import Data.List (sort, find)
 import qualified Text.Atom.Feed as AFeed
 import qualified Text.Feed.Types as FTypes
+import Network.HTTP.Types.Header
 
 
 fetch :: Text -> IO B.ByteString
 fetch url = do
-  response <- simpleHttp $ T.unpack url
-  let tags = parseTags (L.toStrict response)
-  let body = getBody tags
-  let texts = filter (tagText $ \t -> B.length t > 2) body
-  -- return $ show texts
-  -- return $ map ((chr . fromEnum) . (L.unpack)) texts
-  return $ innerText texts
+  request <- parseUrl $ T.unpack url
+  manager <- newManager tlsManagerSettings
+  response <- httpLbs request manager
+  let headers = responseHeaders response
+  let contentType = maybe "text/html" snd $ find ((== hContentType ) . fst) headers
+  let body = L.toStrict $ responseBody response
+  return $ if contentType == "text/html"
+     then let tags = parseTags body
+              bodyTag = getBody tags
+              texts = filter (tagText $ \t -> B.length t > 2) bodyTag
+          in innerText texts
+     else body
 
 getBody :: StringLike str => [Tag str] -> [Tag str]
 getBody tags = dropWhile (~/= body) tags
