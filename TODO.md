@@ -9,3 +9,4 @@ TODO
 * Polling and consequently quicker answer and better results
 * Support for Javascript required sites
 * User guidance
+* Show what's changed
