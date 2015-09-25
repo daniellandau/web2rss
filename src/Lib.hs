@@ -1,3 +1,18 @@
+-- Web2RSS - A feed generator, that keeps tabs on web sites
+-- Copyright (C) 2015 Daniel Landau
+--
+-- This program is free software: you can redistribute it and/or modify
+-- it under the terms of the GNU Affero General Public License as published by
+-- the Free Software Foundation, either version 3 of the License, or
+-- (at your option) any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU Affero General Public License for more details.
+--
+-- You should have received a copy of the GNU Affero General Public License
+-- along with this program.  If not, see <http://www.gnu.org/licenses/>.
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE QuasiQuotes                #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -8,7 +23,7 @@
 
 
 module Lib
-    ( someFunc,
+    ( makeFeed,
       migration
     ) where
 
@@ -127,8 +142,8 @@ getFeedId myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ \con
         insert (FeedInfo newUuid)
         return newUuid
 
-someFunc :: ConnectInfo -> [Text] -> IO String
-someFunc myConnectInfo urls = do
+makeFeed :: ConnectInfo -> [Text] -> IO String
+makeFeed myConnectInfo urls = do
   items <- mapM (itemsForUrl myConnectInfo) urls >>= return . concat
   feedId <- getFeedId myConnectInfo
   let feed =
