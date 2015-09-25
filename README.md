@@ -30,7 +30,7 @@ $ stack exec web2rss-exe
 
 ### How to run on a server (in ~production)
 
-* Copy the file `web2rss-exe` in an architecture dependenet subdirectory under
+* Copy the file `web2rss-exe` in an architecture dependent subdirectory under
   `.stack-work/install` to the machine where you want to run it. The target
   machine needs to have the MySQL libraries installed, but other than that the
   requirements are minimal.
