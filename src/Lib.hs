@@ -33,7 +33,6 @@ import Text.HTML.TagSoup.Match
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString as B
 import Text.StringLike
-import Data.Char (chr)
 import Data.Maybe
 import Database.Persist.Quasi
 import Database.Persist.MySQL
@@ -41,7 +40,7 @@ import Database.Persist.TH
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Time.Format
 import System.Locale
-import Data.Text as T (Text, pack, unpack)
+import Data.Text as T (Text, unpack)
 import Control.Monad.IO.Class  (liftIO)
 import Control.Monad.Logger (runStderrLoggingT)
 import Text.Feed.Constructor
@@ -98,18 +97,15 @@ migration myConnectInfo =
   runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO (runSqlConn (runMigration migrateAll) connection)
 
-createFeed :: Feed
-createFeed = withFeedTitle "Changes in the followed pages" $ newFeed AtomKind
-
 
 format :: UTCTime -> String
 format = formatTime defaultTimeLocale rfc822DateFormat
 
 makeItem :: Text -> UTCTime -> Text -> Item
-makeItem url when id =
+makeItem url when itemId =
   withItemPubDate (format when)
   . withItemTitle (T.unpack url ++ " has changed")
-  . withItemId False ("uurn:uuid:" ++ (T.unpack id)) $ newItem AtomKind
+  . withItemId False ("uurn:uuid:" ++ (T.unpack itemId)) $ newItem AtomKind
 
 prettyPrintFeed :: Feed -> String
 prettyPrintFeed = ppElement . xmlFeed
@@ -120,15 +116,14 @@ itemsForUrl myConnectInfo url = do
   now <- getCurrentTime
   saved <- getSaved myConnectInfo url
   let latestSaved = listToMaybe saved
-  let emptyFeed = createFeed
   let oldItems = map (\page -> makeItem url (pageFetched page) (pageUuid page)) saved
   let isSame = maybe False (== content) (fmap pageContent latestSaved)
   if isSame
     then return oldItems
     else do
-      id <- V4.nextRandom
-      save myConnectInfo (Page url content now (toText id))
-      return (makeItem url now (toText id) : oldItems)
+      itemId <- V4.nextRandom
+      save myConnectInfo (Page url content now (toText itemId))
+      return (makeItem url now (toText itemId) : oldItems)
 
 getFeedId :: ConnectInfo -> IO Text
 getFeedId myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
@@ -139,7 +134,7 @@ getFeedId myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ \con
       then return $ fromJust feedUuid
       else do
         newUuid <- fmap toText $ liftIO V4.nextRandom
-        insert (FeedInfo newUuid)
+        _ <- insert (FeedInfo newUuid)
         return newUuid
 
 makeFeed :: ConnectInfo -> [Text] -> IO String
