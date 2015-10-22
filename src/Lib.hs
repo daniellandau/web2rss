@@ -125,26 +125,27 @@ itemsForUrl myConnectInfo url = do
       save myConnectInfo (Page url content now (toText itemId))
       return (makeItem url now (toText itemId) : oldItems)
 
-getFeedId :: ConnectInfo -> IO Text
-getFeedId myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
+getFeedInfo :: ConnectInfo -> IO FeedInfo
+getFeedInfo myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO $ flip runSqlConn connection $ do
     feedEntity <- selectFirst [] []
-    let feedUuid = fmap (\(Entity _ feed) -> feedInfoUuid feed) feedEntity
-    if isJust feedUuid
-      then return $ fromJust feedUuid
+    let feedInfo = fmap (\(Entity _ feed) -> feed) feedEntity
+    if isJust feedInfo
+      then return $ fromJust feedInfo
       else do
         newUuid <- fmap toText $ liftIO V4.nextRandom
-        _ <- insert (FeedInfo newUuid)
-        return newUuid
+        let newFeedInfo = FeedInfo newUuid
+        _ <- insert newFeedInfo
+        return newFeedInfo
 
 makeFeed :: ConnectInfo -> [Text] -> IO String
 makeFeed myConnectInfo urls = do
   items <- mapM (itemsForUrl myConnectInfo) urls >>= return . concat
-  feedId <- getFeedId myConnectInfo
+  feedInfo <- getFeedInfo myConnectInfo
   let feed =
         withFeedItems items $ feedFromAtom $
         AFeed.nullFeed
-          ("uurn:uuid:" ++ T.unpack feedId)
+          ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
           (AFeed.TextString "Changes in the followed pages")
           (head . reverse . sort . (map (\(FTypes.AtomItem entry) -> AFeed.entryUpdated entry)) $ items)
   return (prettyPrintFeed feed)
