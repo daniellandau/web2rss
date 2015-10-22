@@ -40,7 +40,7 @@ import Database.Persist.TH
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Time.Format
 import System.Locale
-import Data.Text as T (Text, unpack)
+import Data.Text as T (Text, pack, unpack)
 import Control.Monad.IO.Class  (liftIO)
 import Control.Monad.Logger (runStderrLoggingT)
 import Text.Feed.Constructor
@@ -53,6 +53,8 @@ import Data.List (sort, find)
 import qualified Text.Atom.Feed as AFeed
 import qualified Text.Feed.Types as FTypes
 import Network.HTTP.Types.Header
+import Crypto.Random (getSystemDRG, randomBytesGenerate)
+import Crypto.Hash (Digest, MD5, hash)
 
 
 fetch :: Text -> IO B.ByteString
@@ -125,6 +127,14 @@ itemsForUrl myConnectInfo url = do
       save myConnectInfo (Page url content now (toText itemId))
       return (makeItem url now (toText itemId) : oldItems)
 
+getRandomHash :: IO Text
+getRandomHash = do
+  drg <- getSystemDRG
+  let (bytes, _) = randomBytesGenerate 16 drg
+  let byteString = bytes :: B.ByteString
+  let digest = hash byteString :: Digest MD5
+  return . T.pack . show $ digest
+
 getFeedInfo :: ConnectInfo -> IO FeedInfo
 getFeedInfo myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
   liftIO $ flip runSqlConn connection $ do
@@ -134,7 +144,8 @@ getFeedInfo myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ \c
       then return $ fromJust feedInfo
       else do
         newUuid <- fmap toText $ liftIO V4.nextRandom
-        let newFeedInfo = FeedInfo newUuid
+        newHash <- liftIO getRandomHash
+        let newFeedInfo = FeedInfo newUuid newHash
         _ <- insert newFeedInfo
         return newFeedInfo
 

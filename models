@@ -6,3 +6,4 @@ Page
 
 FeedInfo
   uuid    Text
+  hash    Text
