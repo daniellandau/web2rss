@@ -33,6 +33,7 @@ library
                      , uuid
                      , http-types
                      , cryptonite
+                     , monad-control
   default-language:    Haskell2010
 
 executable web2rss-exe
