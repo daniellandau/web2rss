@@ -88,7 +88,7 @@ share [ mkPersist sqlSettings
 getSaved :: (MonadBaseControl IO m, MonadIO m) => Text -> SqlPersistT m [Page]
 getSaved url = do
     pageEntities <- selectList [PageUrl ==. url] [Desc PageFetched]
-    return $ map (\(Entity _ page) -> page) pageEntities
+    return $ map entityVal pageEntities
 
 format :: UTCTime -> String
 format = formatTime defaultTimeLocale rfc822DateFormat
