@@ -90,9 +90,6 @@ getSaved url = do
     pageEntities <- selectList [PageUrl ==. url] [Desc PageFetched]
     return $ fmap (\(Entity _ page) -> page) pageEntities
 
-save :: (MonadBaseControl IO m, MonadIO m, MonadLogger m, PersistEntityBackend a ~ SqlBackend, PersistEntity a) => a -> SqlPersistT m ()
-save entity = insert entity >> return ()
-
 format :: UTCTime -> String
 format = formatTime defaultTimeLocale rfc822DateFormat
 
@@ -117,7 +114,7 @@ itemsForUrl url = do
     then return oldItems
     else do
       itemId <- liftIO $ V4.nextRandom
-      save (Page url content now (toText itemId))
+      insert_ (Page url content now (toText itemId))
       return (makeItem url now (toText itemId) : oldItems)
 
 getRandomHash :: IO Text
@@ -138,7 +135,7 @@ getFeedInfo = do
         newUuid <- fmap toText $ liftIO V4.nextRandom
         newHash <- liftIO getRandomHash
         let newFeedInfo = FeedInfo newUuid newHash
-        save newFeedInfo
+        insert_ newFeedInfo
         return newFeedInfo
 
 
