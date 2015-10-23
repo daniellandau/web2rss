@@ -85,20 +85,13 @@ share [ mkPersist sqlSettings
       ]
   $(persistFileWith lowerCaseSettings "models")
 
-getSaved :: (MonadBaseControl IO m, MonadIO m) => Text -> SqlBackend -> m [Page]
-getSaved url connection =
-  flip runSqlConn connection $ do
+getSaved :: (MonadBaseControl IO m, MonadIO m) => Text -> SqlPersistT m [Page]
+getSaved url = do
     pageEntities <- selectList [PageUrl ==. url] [Desc PageFetched]
     return $ fmap (\(Entity _ page) -> page) pageEntities
 
-save :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlBackend -> Page -> m ()
-save connection page = runSqlConn (insert page) connection >> return ()
-
-migration :: ConnectInfo -> IO ()
-migration myConnectInfo =
-  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
-  runSqlConn (runMigration migrateAll) connection
-
+save :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Page -> SqlPersistT m ()
+save page = insert page >> return ()
 
 format :: UTCTime -> String
 format = formatTime defaultTimeLocale rfc822DateFormat
@@ -112,11 +105,11 @@ makeItem url when itemId =
 prettyPrintFeed :: Feed -> String
 prettyPrintFeed = ppElement . xmlFeed
 
-itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlBackend -> Text -> m [Item]
-itemsForUrl connection url = do
+itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m [Item]
+itemsForUrl url = do
   content <- liftIO $ fetch url
   now <- liftIO $ getCurrentTime
-  saved <- getSaved url connection
+  saved <- getSaved url
   let latestSaved = listToMaybe saved
   let oldItems = map (\page -> makeItem url (pageFetched page) (pageUuid page)) saved
   let isSame = maybe False (== content) (fmap pageContent latestSaved)
@@ -124,7 +117,7 @@ itemsForUrl connection url = do
     then return oldItems
     else do
       itemId <- liftIO $ V4.nextRandom
-      save connection (Page url content now (toText itemId))
+      save (Page url content now (toText itemId))
       return (makeItem url now (toText itemId) : oldItems)
 
 getRandomHash :: IO Text
@@ -135,9 +128,8 @@ getRandomHash = do
   let digest = hash byteString :: Digest MD5
   return . T.pack . show $ digest
 
-getFeedInfo :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlBackend -> m FeedInfo
-getFeedInfo connection =
-  flip runSqlConn connection $ do
+getFeedInfo :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlPersistT m FeedInfo
+getFeedInfo = do
     feedEntity <- selectFirst [] []
     let feedInfo = fmap (\(Entity _ feed) -> feed) feedEntity
     if isJust feedInfo
@@ -150,10 +142,10 @@ getFeedInfo connection =
         return newFeedInfo
 
 
-makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => [Text] -> SqlBackend -> m String
-makeFeed' urls connection = do
-  items <- mapM (itemsForUrl connection) urls >>= return . concat
-  feedInfo <- getFeedInfo connection
+makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => [Text] -> SqlPersistT m String
+makeFeed' urls  = do
+  items <- mapM itemsForUrl urls >>= return . concat
+  feedInfo <- getFeedInfo
   let feed =
         withFeedItems items $ feedFromAtom $
         AFeed.nullFeed
@@ -163,4 +155,9 @@ makeFeed' urls connection = do
   return (prettyPrintFeed feed)
 
 makeFeed :: ConnectInfo -> [Text] -> IO String
-makeFeed myConnectInfo urls = runStderrLoggingT $ withMySQLConn myConnectInfo (makeFeed' urls)
+makeFeed myConnectInfo urls = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn (makeFeed' urls)
+
+migration :: ConnectInfo -> IO ()
+migration myConnectInfo =
+  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
+  runSqlConn (runMigration migrateAll) connection
