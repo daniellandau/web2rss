@@ -33,6 +33,7 @@ import Text.HTML.TagSoup
 import Text.HTML.TagSoup.Match
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as Char8
 import Text.StringLike
 import Data.Maybe
 import Database.Persist.Quasi
@@ -59,6 +60,8 @@ import Crypto.Hash (Digest, MD5, hash)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.Logger (MonadLogger)
+import Data.Algorithm.Diff
+import Data.Algorithm.DiffOutput
 
 fetch :: Text -> IO B.ByteString
 fetch url = do
@@ -93,13 +96,22 @@ getSaved url = do
 format :: UTCTime -> String
 format = formatTime defaultTimeLocale rfc822DateFormat
 
-makeItem :: Text -> UTCTime -> Text -> Item
-makeItem url when itemId = atomEntryToItem $
-  item { AFeed.entryContent = Just (AFeed.TextContent "foo"), AFeed.entryLinks = [AFeed.nullLink (T.unpack url)] }
+makeItem :: Text -> UTCTime -> Text -> String -> Item
+makeItem url when itemId content = atomEntryToItem $
+  item { AFeed.entryContent = Just (AFeed.TextContent content), AFeed.entryLinks = [AFeed.nullLink (T.unpack url)] }
   where item = AFeed.nullEntry ("uurn:uuid:" ++ (T.unpack itemId)) (AFeed.TextString (T.unpack url ++ " has changed")) (format when)
 
 prettyPrintFeed :: Feed -> String
 prettyPrintFeed = ppElement . xmlFeed
+
+
+prettyPrintDiff :: B.ByteString -> B.ByteString -> String
+prettyPrintDiff old new =
+  ppDiff diffs
+  where diffs :: [Diff [String]]
+        diffs = getGroupedDiff oldLines newLines
+        oldLines = lines $ Char8.unpack old
+        newLines = lines $ Char8.unpack new
 
 itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m [Item]
 itemsForUrl url = do
@@ -107,14 +119,19 @@ itemsForUrl url = do
   now <- liftIO $ getCurrentTime
   saved <- getSaved url
   let latestSaved = listToMaybe saved
-  let oldItems = map (\page -> makeItem url (pageFetched page) (pageUuid page)) saved
+  let contents = map pageContent saved
+  let contentPairs = zip ("" : contents) contents
+  let diffs = map (\(fst, snd) -> prettyPrintDiff fst snd) contentPairs
+  let oldItems = map (\(page, diff) -> makeItem url (pageFetched page) (pageUuid page) diff) (zip saved diffs)
   let isSame = maybe False (== content) (fmap pageContent latestSaved)
   if isSame
     then return oldItems
     else do
       itemId <- liftIO $ V4.nextRandom
+      let oldContent = maybe "" pageContent latestSaved
+      let diffContent = (prettyPrintDiff oldContent content)
       insert_ (Page url content now (toText itemId))
-      return (makeItem url now (toText itemId) : oldItems)
+      return (makeItem url now (toText itemId) diffContent : oldItems)
 
 getRandomHash :: IO Text
 getRandomHash = do

@@ -34,6 +34,7 @@ library
                      , http-types
                      , cryptonite
                      , monad-control
+                     , Diff
   default-language:    Haskell2010
 
 executable web2rss-exe
