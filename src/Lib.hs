@@ -94,10 +94,9 @@ format :: UTCTime -> String
 format = formatTime defaultTimeLocale rfc822DateFormat
 
 makeItem :: Text -> UTCTime -> Text -> Item
-makeItem url when itemId =
-  withItemPubDate (format when)
-  . withItemTitle (T.unpack url ++ " has changed")
-  . withItemId False ("uurn:uuid:" ++ (T.unpack itemId)) $ newItem AtomKind
+makeItem url when itemId = atomEntryToItem $
+  item { AFeed.entryContent = Just (AFeed.TextContent "foo"), AFeed.entryLinks = [AFeed.nullLink (T.unpack url)] }
+  where item = AFeed.nullEntry ("uurn:uuid:" ++ (T.unpack itemId)) (AFeed.TextString (T.unpack url ++ " has changed")) (format when)
 
 prettyPrintFeed :: Feed -> String
 prettyPrintFeed = ppElement . xmlFeed
@@ -137,7 +136,6 @@ getFeedInfo = do
         let newFeedInfo = FeedInfo newUuid newHash
         insert_ newFeedInfo
         return newFeedInfo
-
 
 makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => [Text] -> SqlPersistT m String
 makeFeed' urls  = do
