@@ -121,7 +121,7 @@ itemsForUrl url = do
   let latestSaved = listToMaybe saved
   let contents = map pageContent saved
   let contentPairs = zip ("" : contents) contents
-  let diffs = map (\(fst, snd) -> prettyPrintDiff fst snd) contentPairs
+  let diffs = map (\(_1, _2) -> prettyPrintDiff _1 _2) contentPairs
   let oldItems = map (\(page, diff) -> makeItem url (pageFetched page) (pageUuid page) diff) (zip saved diffs)
   let isSame = maybe False (== content) (fmap pageContent latestSaved)
   if isSame
