@@ -18,6 +18,7 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE ViewPatterns      #-}
 module Main where
 
 import Lib
@@ -30,10 +31,12 @@ import Yesod
 data Web2Rss = Web2Rss
     { connectInfo :: ConnectInfo
     , urls :: [Text]
+    , sourceCodeUrl :: Text
     }
 
 mkYesod "Web2Rss" [parseRoutes|
-/ FeedR GET
+/      MainR GET
+/foo/#Text FeedR GET
 |]
 
 instance Yesod Web2Rss
@@ -41,8 +44,18 @@ instance Yesod Web2Rss
 mimeType :: ContentType
 mimeType = "application/atom+xml"
 
-getFeedR :: Handler TypedContent
-getFeedR = do
+getMainR :: Handler Html
+getMainR = do
+  settings <- getYesod
+  let url = sourceCodeUrl settings
+  defaultLayout [whamlet|
+     <h1>Web2RSS
+     <p>This web site is free software under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+     <p>You can find the source code at <a href="#{url}">#{url}</a>.
+|]
+
+getFeedR :: Text -> Handler TypedContent
+getFeedR hash = do
   settings <- getYesod
   feedText <- liftIO $ makeFeed (connectInfo settings) (urls settings)
   return $ TypedContent mimeType $ toContent feedText
@@ -54,9 +67,10 @@ main = do
   password <- lookupEnv "PASSWORD"
   urls <- fmap ((map pack) . words) $ getEnv "URLS"
   port <- maybe 3000 read <$> lookupEnv "PORT"
+  sourceCodeUrl <- fmap pack $ maybe "https://github.com/daniellandau/web2rss" id <$> lookupEnv "SOURCE_CODE_URL"
   let connectInfo = defaultConnectInfo { connectUser = maybe "web2rss" id user
                                        , connectPassword = maybe "" id password
                                        , connectDatabase = maybe "web2rss" id db
                                        }
   migration connectInfo
-  warp port $ Web2Rss connectInfo urls
+  warp port $ Web2Rss connectInfo urls sourceCodeUrl
