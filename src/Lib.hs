@@ -63,7 +63,9 @@ import Control.Monad.Logger (MonadLogger)
 import Data.Algorithm.Diff
 import Data.Algorithm.DiffOutput
 
-fetch :: Text -> IO B.ByteString
+data Response = Response { body :: B.ByteString, contentType :: B.ByteString }
+
+fetch :: Text -> IO Lib.Response
 fetch url = do
   request <- parseUrl $ T.unpack url
   manager <- newManager tlsManagerSettings
@@ -71,17 +73,40 @@ fetch url = do
   let headers = responseHeaders response
   let contentType = maybe "text/html" snd $ find ((== hContentType ) . fst) headers
   let body = L.toStrict $ responseBody response
-  return $ if contentType == "text/html"
-     then let tags = parseTags body
-              bodyTag = getBody tags
-              texts = filter (tagText $ \t -> B.length t > 2) bodyTag
-          in innerText texts
-     else body
+  return $ Response body contentType
 
-getBody :: StringLike str => [Tag str] -> [Tag str]
+
+parse :: Lib.Response -> B.ByteString
+parse response =
+  if B.isPrefixOf "text/html" (contentType response)
+  then let tags = parseTags (body response)
+           bodyTag = getBody tags
+           withoutScripts = filterScripts bodyTag
+           texts = filter isTagText withoutScripts
+       in innerText texts
+  else body response
+
+
+getBody :: [Tag B.ByteString] -> [Tag B.ByteString]
 getBody tags = dropWhile (~/= body) tags
   where body :: String
         body = "<body>"
+
+filterScripts :: StringLike str => [Tag str] -> [Tag str]
+filterScripts tags = reverse $ filterScripts' False [] tags
+
+filterScripts' :: StringLike str => Bool -> [Tag str] -> [Tag str] -> [Tag str]
+filterScripts' _ result [] = result
+filterScripts' inScript result (tag : tags)
+  | inScript && not (isTagCloseName scriptTagName tag) =
+    filterScripts' True result tags
+  | inScript && isTagCloseName scriptTagName tag =
+    filterScripts' False result tags
+  | not inScript && (isTagOpenName scriptTagName tag) =
+    filterScripts' True result tags
+  | otherwise =
+    filterScripts' False (tag : result) tags
+  where scriptTagName = Text.StringLike.fromString "script"
 
 share [ mkPersist sqlSettings
       , mkMigrate "migrateAll"
@@ -113,24 +138,32 @@ prettyPrintDiff old new =
         oldLines = lines $ Char8.unpack old
         newLines = lines $ Char8.unpack new
 
+parseFromSaved :: Page -> B.ByteString
+parseFromSaved page = Lib.parse . responseFromPage $ page
+
+
+responseFromPage page = Lib.Response (pageBody page) (pageContentType page)
+
 itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m [Item]
 itemsForUrl url = do
-  content <- liftIO $ fetch url
+  response <- liftIO $ fetch url
+  let content = Lib.parse response
   now <- liftIO $ getCurrentTime
   saved <- getSaved url
   let latestSaved = listToMaybe saved
-  let contents = map pageContent saved
+  let reverseSaved = reverse saved
+  let contents = map parseFromSaved reverseSaved
   let contentPairs = zip ("" : contents) contents
   let diffs = map (\(_1, _2) -> prettyPrintDiff _1 _2) contentPairs
-  let oldItems = map (\(page, diff) -> makeItem url (pageFetched page) (pageUuid page) diff) (zip saved diffs)
-  let isSame = maybe False (== content) (fmap pageContent latestSaved)
+  let oldItems = reverse $ map (\(page, diff) -> makeItem url (pageFetched page) (pageUuid page) diff) (zip reverseSaved diffs)
+  let isSame = maybe False (== content) (fmap parseFromSaved latestSaved)
   if isSame
     then return oldItems
     else do
       itemId <- liftIO $ V4.nextRandom
-      let oldContent = maybe "" pageContent latestSaved
+      let oldContent = maybe "" parseFromSaved latestSaved
       let diffContent = (prettyPrintDiff oldContent content)
-      insert_ (Page url content now (toText itemId))
+      insert_ (Page url (body response) (contentType response) now (toText itemId))
       return (makeItem url now (toText itemId) diffContent : oldItems)
 
 getRandomHash :: IO Text

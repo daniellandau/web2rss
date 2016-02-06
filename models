@@ -1,9 +1,10 @@
 Page
-  url     Text
-  content B.ByteString
-  fetched UTCTime
-  uuid    Text
+  url         Text
+  body        B.ByteString
+  contentType B.ByteString
+  fetched     UTCTime
+  uuid        Text
 
 FeedInfo
-  uuid    Text
-  hash    Text
+  uuid        Text
+  hash        Text
