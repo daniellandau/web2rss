@@ -24,6 +24,7 @@ module Main where
 import Lib
 import Database.Persist.MySQL
 import Data.Text (Text, pack)
+import Data.Maybe
 import Control.Applicative ((<$>))
 import System.Environment
 import Yesod
@@ -35,8 +36,8 @@ data Web2Rss = Web2Rss
     }
 
 mkYesod "Web2Rss" [parseRoutes|
-/      MainR GET
-/foo/#Text FeedR GET
+/                     MainR     GET
+/feeds/#Text          FeedR     GET
 |]
 
 instance Yesod Web2Rss
@@ -57,8 +58,10 @@ getMainR = do
 getFeedR :: Text -> Handler TypedContent
 getFeedR hash = do
   settings <- getYesod
-  feedText <- liftIO $ makeFeed (connectInfo settings) (urls settings)
-  return $ TypedContent mimeType $ toContent feedText
+  feedTextMaybe <- liftIO $ makeFeed (connectInfo settings) (urls settings) hash
+  if isJust feedTextMaybe
+    then return $ TypedContent mimeType $ toContent $ fromJust feedTextMaybe
+    else  notFound
 
 main :: IO ()
 main = do

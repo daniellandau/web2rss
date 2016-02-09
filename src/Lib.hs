@@ -144,8 +144,8 @@ parseFromSaved page = Lib.parse . responseFromPage $ page
 
 responseFromPage page = Lib.Response (pageBody page) (pageContentType page)
 
-itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m [Item]
-itemsForUrl url = do
+itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => FeedInfoId -> Text -> SqlPersistT m [Item]
+itemsForUrl feedId url = do
   response <- liftIO $ fetch url
   let content = Lib.parse response
   now <- liftIO $ getCurrentTime
@@ -163,7 +163,7 @@ itemsForUrl url = do
       itemId <- liftIO $ V4.nextRandom
       let oldContent = maybe "" parseFromSaved latestSaved
       let diffContent = (prettyPrintDiff oldContent content)
-      insert_ (Page url (body response) (contentType response) now (toText itemId))
+      insert_ (Page url (body response) (contentType response) now (toText itemId) feedId)
       return (makeItem url now (toText itemId) diffContent : oldItems)
 
 getRandomHash :: IO Text
@@ -174,33 +174,28 @@ getRandomHash = do
   let digest = hash byteString :: Digest MD5
   return . T.pack . show $ digest
 
-getFeedInfo :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlPersistT m FeedInfo
-getFeedInfo = do
-    feedEntity <- selectFirst [] []
-    let feedInfo = fmap (\(Entity _ feed) -> feed) feedEntity
-    if isJust feedInfo
-      then return $ fromJust feedInfo
-      else do
-        newUuid <- fmap toText $ liftIO V4.nextRandom
-        newHash <- liftIO getRandomHash
-        let newFeedInfo = FeedInfo newUuid newHash
-        insert_ newFeedInfo
-        return newFeedInfo
+getFeedInfo :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m (Maybe (Entity FeedInfo))
+getFeedInfo feedHash =
+  selectFirst [FeedInfoHash ==. feedHash] []
 
-makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => [Text] -> SqlPersistT m String
-makeFeed' urls  = do
-  items <- mapM itemsForUrl urls >>= return . concat
-  feedInfo <- getFeedInfo
-  let feed =
-        withFeedItems items $ feedFromAtom $
-        AFeed.nullFeed
-          ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
-          (AFeed.TextString "Changes in the followed pages")
-          (head . reverse . sort . (map (\(FTypes.AtomItem entry) -> AFeed.entryUpdated entry)) $ items)
-  return (prettyPrintFeed feed)
+makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => [Text] -> Text -> SqlPersistT m (Maybe String)
+makeFeed' urls feedHash = do
+  feedEntityMaybe <- getFeedInfo feedHash
+  if isJust feedEntityMaybe
+    then
+    let feedEntity = fromJust feedEntityMaybe
+        (Entity key feedInfo) = feedEntity
+    in do
+      items <- mapM (itemsForUrl key) urls >>= return . concat
+      let feed = withFeedItems items $ feedFromAtom $
+            AFeed.nullFeed ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
+            (AFeed.TextString "Changes in the followed pages")
+            (head . reverse . sort . (map (\(FTypes.AtomItem entry) -> AFeed.entryUpdated entry)) $ items)
+      return $ Just (prettyPrintFeed feed)
+   else return Nothing
 
-makeFeed :: ConnectInfo -> [Text] -> IO String
-makeFeed myConnectInfo urls = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn (makeFeed' urls)
+makeFeed :: ConnectInfo -> [Text] -> Text -> IO (Maybe String)
+makeFeed myConnectInfo urls feedHash = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn (makeFeed' urls feedHash)
 
 migration :: ConnectInfo -> IO ()
 migration myConnectInfo =

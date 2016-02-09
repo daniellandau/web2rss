@@ -4,6 +4,7 @@ Page
   contentType B.ByteString
   fetched     UTCTime
   uuid        Text
+  feedId      FeedInfoId
 
 FeedInfo
   uuid        Text
