@@ -38,12 +38,16 @@ data Web2Rss = Web2Rss
 mkYesod "Web2Rss" [parseRoutes|
 /                     MainR     GET
 /feeds/#Text          FeedR     GET
+/feeds                FeedsR     POST
 |]
 
 instance Yesod Web2Rss
 
-mimeType :: ContentType
-mimeType = "application/atom+xml"
+contentTypeAtom :: ContentType
+contentTypeAtom = "application/atom+xml"
+
+contentTypeJson :: ContentType
+contentTypeJson = "application/json"
 
 getMainR :: Handler Html
 getMainR = do
@@ -58,16 +62,24 @@ getMainR = do
 getFeedR :: Text -> Handler TypedContent
 getFeedR hash = do
   settings <- getYesod
+  -- TODO no urls in settings
   feedTextMaybe <- liftIO $ makeFeed (connectInfo settings) (urls settings) hash
   if isJust feedTextMaybe
-    then return $ TypedContent mimeType $ toContent $ fromJust feedTextMaybe
-    else  notFound
+    then return $ TypedContent contentTypeAtom $ toContent $ fromJust feedTextMaybe
+    else notFound
+
+postFeedsR :: Handler TypedContent
+postFeedsR = do
+  settings <- getYesod
+  key <- liftIO $ createFeedInfo $ connectInfo settings
+  return $ TypedContent contentTypeJson $ toContent ("{'key':'"++key++"'}")
 
 main :: IO ()
 main = do
   user <- lookupEnv "USER"
   db <- lookupEnv "DB"
   password <- lookupEnv "PASSWORD"
+  -- TODO no urls in settings
   urls <- fmap ((map pack) . words) $ getEnv "URLS"
   port <- maybe 3000 read <$> lookupEnv "PORT"
   sourceCodeUrl <- fmap pack $ maybe "https://github.com/daniellandau/web2rss" id <$> lookupEnv "SOURCE_CODE_URL"

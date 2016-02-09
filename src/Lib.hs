@@ -25,6 +25,7 @@
 
 module Lib
     ( makeFeed,
+      createFeedInfo,
       migration
     ) where
 
@@ -176,8 +177,20 @@ getRandomHash = do
 
 getFeedInfo :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m (Maybe (Entity FeedInfo))
 getFeedInfo feedHash =
-  selectFirst [FeedInfoHash ==. feedHash] []
+    selectFirst [FeedInfoHash ==. feedHash] []
 
+createFeedInfo' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlPersistT m String
+createFeedInfo' = do
+  newUuid <- fmap toText $ liftIO V4.nextRandom
+  newHash <- liftIO getRandomHash
+  let newFeedInfo = FeedInfo newUuid newHash
+  key <- insert newFeedInfo
+  return $ T.unpack newHash
+
+createFeedInfo :: ConnectInfo -> IO String
+createFeedInfo myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn createFeedInfo'
+
+  -- TODO no urls in settings
 makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => [Text] -> Text -> SqlPersistT m (Maybe String)
 makeFeed' urls feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
