@@ -1,7 +1,5 @@
 flags: {}
 packages:
 - '.'
-extra-deps:
-- cryptonite-0.6
-- feed-0.3.10.1
-resolver: lts-2.21
+extra-deps: []
+resolver: lts-5.9

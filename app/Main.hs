@@ -22,6 +22,7 @@
 module Main where
 
 import Lib
+import Data.Aeson.Encode
 import Database.Persist.MySQL
 import Data.Text (Text, pack)
 import Data.Maybe
@@ -36,9 +37,10 @@ data Web2Rss = Web2Rss
     }
 
 mkYesod "Web2Rss" [parseRoutes|
-/                     MainR     GET
-/feeds/#Text          FeedR     GET
-/feeds                FeedsR     POST
+/                     MainR        GET
+/feeds/#Text          FeedR        GET
+/feeds/#Text/url      FeedUrlR     POST
+/feeds                FeedsR       POST
 |]
 
 instance Yesod Web2Rss
@@ -48,6 +50,9 @@ contentTypeAtom = "application/atom+xml"
 
 contentTypeJson :: ContentType
 contentTypeJson = "application/json"
+
+contentTypeTextPlain :: ContentType
+contentTypeTextPlain = "text/plain"
 
 getMainR :: Handler Html
 getMainR = do
@@ -73,6 +78,23 @@ postFeedsR = do
   settings <- getYesod
   key <- liftIO $ createFeedInfo $ connectInfo settings
   return $ TypedContent contentTypeJson $ toContent ("{'key':'"++key++"'}")
+
+data FooUrl = FooUrl { url :: Text }
+
+
+instance FromJSON FooUrl where
+  parseJSON (Object o) = FooUrl <$> o .: "url"
+
+postFeedUrlR :: Text -> Handler TypedContent
+postFeedUrlR hash = do
+  settings <- getYesod
+  exists <- hasFeed (connectInfo settings) hash
+  FooUrl url <- requireJsonBody :: Handler FooUrl
+  if exists
+    then do
+      addUrlToFeed (connectInfo settings) hash url
+      return $ TypedContent contentTypeTextPlain $ toContent $ pack "ok"
+    else notFound
 
 main :: IO ()
 main = do

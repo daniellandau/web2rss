@@ -24,10 +24,11 @@
 
 
 module Lib
-    ( makeFeed,
-      createFeedInfo,
-      migration
-    ) where
+    -- ( makeFeed,
+    --   createFeedInfo,
+    --   migration
+    -- )
+    where
 
 import Network.HTTP.Conduit
 import Text.HTML.TagSoup
@@ -42,7 +43,7 @@ import Database.Persist.MySQL
 import Database.Persist.TH
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Time.Format
-import System.Locale
+import qualified System.Locale as Locale
 import Data.Text as T (Text, pack, unpack)
 import Control.Monad.IO.Class  (liftIO)
 import Control.Monad.Logger (runStderrLoggingT)
@@ -142,6 +143,25 @@ prettyPrintDiff old new =
 parseFromSaved :: Page -> B.ByteString
 parseFromSaved page = Lib.parse . responseFromPage $ page
 
+hasFeed myConnectInfo feedHash = do
+  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
+    runSqlConn (hasFeed' feedHash) connection
+
+hasFeed' feedHash = do
+  feedEntityMaybe <- getFeedInfo feedHash
+  return $ isJust feedEntityMaybe
+
+addUrlToFeed myConnectInfo feedHash url = do
+  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
+    runSqlConn (addUrlToFeed' feedHash url) connection
+
+addUrlToFeed' feedHash url = do
+  feedEntityMaybe <- getFeedInfo feedHash
+  let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
+  if isJust feedIdMaybe
+    then let id = fromJust feedIdMaybe
+         in insert_ (Url id url)
+    else return ()
 
 responseFromPage page = Lib.Response (pageBody page) (pageContentType page)
 

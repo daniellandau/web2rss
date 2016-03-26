@@ -9,3 +9,7 @@ Page
 FeedInfo
   uuid        Text
   hash        Text
+
+Url
+  feedId      FeedInfoId
+  url         Text
