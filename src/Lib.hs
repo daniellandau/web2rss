@@ -163,6 +163,19 @@ addUrlToFeed' feedHash url = do
          in insert_ (Url id url)
     else return ()
 
+
+deleteUrlFromFeed myConnectInfo feedHash urlId = do
+  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
+    runSqlConn (deleteUrlFromFeed' feedHash urlId) connection
+
+deleteUrlFromFeed' feedHash urlId = do
+  feedEntityMaybe <- getFeedInfo feedHash
+  let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
+  if isJust feedIdMaybe
+     then let id = fromJust feedIdMaybe
+          in deleteWhere [UrlFeedId ==. id, UrlId ==. urlId]
+    else return ()
+
 responseFromPage page = Lib.Response (pageBody page) (pageContentType page)
 
 itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => FeedInfoId -> Text -> SqlPersistT m [Item]

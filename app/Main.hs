@@ -37,10 +37,11 @@ data Web2Rss = Web2Rss
     }
 
 mkYesod "Web2Rss" [parseRoutes|
-/                     MainR        GET
-/feeds/#Text          FeedR        GET
-/feeds/#Text/url      FeedUrlR     POST
-/feeds                FeedsR       POST
+/                           MainR         GET
+/feeds/#Text                FeedR         GET
+/feeds/#Text/url            FeedUrlsR     POST
+/feeds/#Text/url/#UrlId     FeedUrlR      DELETE
+/feeds                      FeedsR        POST
 |]
 
 instance Yesod Web2Rss
@@ -85,8 +86,8 @@ data FooUrl = FooUrl { url :: Text }
 instance FromJSON FooUrl where
   parseJSON (Object o) = FooUrl <$> o .: "url"
 
-postFeedUrlR :: Text -> Handler TypedContent
-postFeedUrlR hash = do
+postFeedUrlsR :: Text -> Handler TypedContent
+postFeedUrlsR hash = do
   settings <- getYesod
   exists <- hasFeed (connectInfo settings) hash
   FooUrl url <- requireJsonBody :: Handler FooUrl
@@ -95,6 +96,12 @@ postFeedUrlR hash = do
       addUrlToFeed (connectInfo settings) hash url
       return $ TypedContent contentTypeTextPlain $ toContent $ pack "ok"
     else notFound
+
+deleteFeedUrlR :: Text -> UrlId -> Handler TypedContent
+deleteFeedUrlR feedHash urlId = do
+  settings <- getYesod
+  deleteUrlFromFeed (connectInfo settings) feedHash urlId
+  return . TypedContent contentTypeTextPlain . toContent . pack $ "ok"
 
 main :: IO ()
 main = do
