@@ -32,7 +32,6 @@ import Yesod
 
 data Web2Rss = Web2Rss
     { connectInfo :: ConnectInfo
-    , urls :: [Text]
     , sourceCodeUrl :: Text
     }
 
@@ -68,8 +67,7 @@ getMainR = do
 getFeedR :: Text -> Handler TypedContent
 getFeedR hash = do
   settings <- getYesod
-  -- TODO no urls in settings
-  feedTextMaybe <- liftIO $ makeFeed (connectInfo settings) (urls settings) hash
+  feedTextMaybe <- liftIO $ makeFeed (connectInfo settings) hash
   if isJust feedTextMaybe
     then return $ TypedContent contentTypeAtom $ toContent $ fromJust feedTextMaybe
     else notFound
@@ -108,8 +106,6 @@ main = do
   user <- lookupEnv "USER"
   db <- lookupEnv "DB"
   password <- lookupEnv "PASSWORD"
-  -- TODO no urls in settings
-  urls <- fmap ((map pack) . words) $ getEnv "URLS"
   port <- maybe 3000 read <$> lookupEnv "PORT"
   sourceCodeUrl <- fmap pack $ maybe "https://github.com/daniellandau/web2rss" id <$> lookupEnv "SOURCE_CODE_URL"
   let connectInfo = defaultConnectInfo { connectUser = maybe "web2rss" id user
@@ -117,4 +113,4 @@ main = do
                                        , connectDatabase = maybe "web2rss" id db
                                        }
   migration connectInfo
-  warp port $ Web2Rss connectInfo urls sourceCodeUrl
+  warp port $ Web2Rss connectInfo sourceCodeUrl

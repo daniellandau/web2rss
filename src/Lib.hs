@@ -176,6 +176,21 @@ deleteUrlFromFeed' feedHash urlId = do
           in deleteWhere [UrlFeedId ==. id, UrlId ==. urlId]
     else return ()
 
+urlsForFeed myConnectInfo feedHash =
+  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
+    runSqlConn (urlsForFeed' feedHash) connection
+
+urlsForFeed' feedHash = do
+  feedEntityMaybe <- getFeedInfo feedHash
+  let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
+  if isJust feedIdMaybe
+    then let id = fromJust feedIdMaybe
+         in do
+            urlEntities <- selectList [UrlFeedId ==. id] []
+            let urls = map (\(Entity _ (Url _ url)) -> url) urlEntities
+            return urls
+    else return []
+  
 responseFromPage page = Lib.Response (pageBody page) (pageContentType page)
 
 itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => FeedInfoId -> Text -> SqlPersistT m [Item]
@@ -223,10 +238,11 @@ createFeedInfo' = do
 createFeedInfo :: ConnectInfo -> IO String
 createFeedInfo myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn createFeedInfo'
 
-  -- TODO no urls in settings
-makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => [Text] -> Text -> SqlPersistT m (Maybe String)
-makeFeed' urls feedHash = do
+
+makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m (Maybe String)
+makeFeed' feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
+  urls <- urlsForFeed' feedHash
   if isJust feedEntityMaybe
     then
     let feedEntity = fromJust feedEntityMaybe
@@ -236,12 +252,13 @@ makeFeed' urls feedHash = do
       let feed = withFeedItems items $ feedFromAtom $
             AFeed.nullFeed ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
             (AFeed.TextString "Changes in the followed pages")
-            (head . reverse . sort . (map (\(FTypes.AtomItem entry) -> AFeed.entryUpdated entry)) $ items)
+            (maybe "" id (listToMaybe . reverse . sort . (map (\(FTypes.AtomItem entry) ->
+                                            AFeed.entryUpdated entry)) $ items) )
       return $ Just (prettyPrintFeed feed)
    else return Nothing
 
-makeFeed :: ConnectInfo -> [Text] -> Text -> IO (Maybe String)
-makeFeed myConnectInfo urls feedHash = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn (makeFeed' urls feedHash)
+makeFeed :: ConnectInfo -> Text -> IO (Maybe String)
+makeFeed myConnectInfo feedHash = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn (makeFeed' feedHash)
 
 migration :: ConnectInfo -> IO ()
 migration myConnectInfo =

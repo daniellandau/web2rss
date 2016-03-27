@@ -74,7 +74,6 @@ USER="web2rss"
 PASSWORD=""
 DB="web2rss"
 PORT=""
-URLS="http://first.example.com https://second.example.com"
 SOURCE_CODE_URL=""
 ```
 
@@ -93,7 +92,6 @@ Understood variables are:
 * `DB` for database name
 * `PASSWORD` for database password
 * `PORT` for port to listen on
-* `URLS` for a space separated list of URLs to watch
 * `SOURCE_CODE_URL` for a link to finding your customized version
 
 ## Contributing
