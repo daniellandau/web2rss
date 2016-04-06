@@ -151,35 +151,29 @@ hasFeed feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   return $ isJust feedEntityMaybe
 
-addUrlToFeed feedHash url = do
+
+idForHash feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
-  if isJust feedIdMaybe
-    then let id = fromJust feedIdMaybe
-         in insert_ (Url id url)
-    else throw "aargh, you should not try to add urls to feeds that do not exist"
+  maybe
+    (throw "The given hash does not match any existing feed")
+    return feedIdMaybe
+
+addUrlToFeed feedHash url = do
+  id <- idForHash feedHash
+  insert_ (Url id url)
 
 deleteUrlFromFeed feedHash urlId = do
-  feedEntityMaybe <- getFeedInfo feedHash
-  let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
-  if isJust feedIdMaybe
-     then let id = fromJust feedIdMaybe
-          in deleteWhere [UrlFeedId ==. id, UrlId ==. urlId]
-    else return ()
+  id <- idForHash feedHash
+  deleteWhere [UrlFeedId ==. id, UrlId ==. urlId]
 
 
-urlsForFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m [Text]
 urlsForFeed' feedHash = do
-  feedEntityMaybe <- getFeedInfo feedHash
-  let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
-  if isJust feedIdMaybe
-    then let id = fromJust feedIdMaybe
-         in do
-            urlEntities <- selectList [UrlFeedId ==. id] []
-            let urls = map (\(Entity _ (Url _ url)) -> url) urlEntities
-            return urls
-    else return []
-  
+  id <- idForHash feedHash
+  urlEntities <- selectList [UrlFeedId ==. id] []
+  let urls = map (\(Entity _ (Url _ url)) -> url) urlEntities
+  return urls
+
 responseFromPage page = Lib.Response (pageBody page) (pageContentType page)
 
 itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => FeedInfoId -> Text -> SqlPersistT m [Item]
@@ -224,23 +218,20 @@ createFeedInfo = do
   key <- insert newFeedInfo
   return $ T.unpack newHash
 
-makeFeed :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m (Maybe String)
+require msg x =
+  maybe (throw msg) return x
+
 makeFeed feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
+  (Entity key feedInfo) <- require "feed not found" feedEntityMaybe
   urls <- urlsForFeed' feedHash
-  if isJust feedEntityMaybe
-    then
-    let feedEntity = fromJust feedEntityMaybe
-        (Entity key feedInfo) = feedEntity
-    in do
-      items <- mapM (itemsForUrl key) urls >>= return . concat
-      let feed = withFeedItems items $ feedFromAtom $
-            AFeed.nullFeed ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
-            (AFeed.TextString "Changes in the followed pages")
-            (maybe "" id (listToMaybe . reverse . sort . (map (\(FTypes.AtomItem entry) ->
+  items <- mapM (itemsForUrl key) urls >>= return . concat
+  let feed = withFeedItems items $ feedFromAtom $
+        AFeed.nullFeed ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
+        (AFeed.TextString "Changes in the followed pages")
+        (maybe "" id (listToMaybe . reverse . sort . (map (\(FTypes.AtomItem entry) ->
                                             AFeed.entryUpdated entry)) $ items) )
-      return $ Just (prettyPrintFeed feed)
-   else return Nothing
+  return $ prettyPrintFeed feed
 
 migration :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlPersistT m ()
 migration  = runMigration migrateAll

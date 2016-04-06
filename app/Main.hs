@@ -29,7 +29,8 @@ import Data.Text (Text, pack)
 import Data.Maybe
 import Control.Applicative ((<$>))
 import System.Environment
-import Control.Monad.Logger (runStderrLoggingT)
+import Control.Monad.Logger
+import Control.Monad.Trans.Except
 import Yesod
 
 data Web2Rss = Web2Rss
@@ -70,10 +71,8 @@ getMainR = do
 getFeedR :: Text -> Handler TypedContent
 getFeedR hash = do
   settings <- getYesod
-  feedTextMaybe <- run settings $ makeFeed hash
-  if isJust feedTextMaybe
-    then return $ TypedContent contentTypeAtom $ toContent $ fromJust feedTextMaybe
-    else notFound
+  feedText <- runError $ run settings $ makeFeed hash
+  return $ TypedContent contentTypeAtom $ toContent $ feedText
 
 postFeedsR :: Handler TypedContent
 postFeedsR = do
@@ -83,6 +82,8 @@ postFeedsR = do
 
 data FooUrl = FooUrl { url :: Text }
 
+run :: (MonadBaseControl IO m, MonadIO m) =>
+     Web2Rss -> SqlPersistT (Control.Monad.Logger.LoggingT m) a -> m a
 run settings = runStderrLoggingT . (flip runSqlPool $ connectionPool settings)
 
 instance FromJSON FooUrl where
@@ -91,14 +92,15 @@ instance FromJSON FooUrl where
 postFeedUrlsR :: Text -> Handler TypedContent
 postFeedUrlsR hash = do
   settings <- getYesod
-  exists <- run settings $ hasFeed hash
   FooUrl url <- requireJsonBody :: Handler FooUrl
-  if exists
-    then do
-      run settings $ addUrlToFeed hash url
-      ok
-    else notFound
+  runError $ run settings $ addUrlToFeed hash url
+  ok
 
+runError a = do
+  foo <- runExceptT a
+  case foo of
+    Left msg -> permissionDenied msg
+    Right x  -> return x
 
 ok :: Handler TypedContent
 ok = return . TypedContent contentTypeTextPlain . toContent . pack $ "ok"
@@ -106,7 +108,7 @@ ok = return . TypedContent contentTypeTextPlain . toContent . pack $ "ok"
 deleteFeedUrlR :: Text -> UrlId -> Handler TypedContent
 deleteFeedUrlR feedHash urlId = do
   settings <- getYesod
-  run settings (deleteUrlFromFeed feedHash urlId)
+  runError $ run settings (deleteUrlFromFeed feedHash urlId)
   ok
 
 main :: IO ()
