@@ -143,19 +143,11 @@ prettyPrintDiff old new =
 parseFromSaved :: Page -> B.ByteString
 parseFromSaved page = Lib.parse . responseFromPage $ page
 
-hasFeed myConnectInfo feedHash = do
-  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
-    runSqlConn (hasFeed' feedHash) connection
-
-hasFeed' feedHash = do
+hasFeed feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   return $ isJust feedEntityMaybe
 
-addUrlToFeed myConnectInfo feedHash url = do
-  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
-    runSqlConn (addUrlToFeed' feedHash url) connection
-
-addUrlToFeed' feedHash url = do
+addUrlToFeed feedHash url = do
   feedEntityMaybe <- getFeedInfo feedHash
   let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
   if isJust feedIdMaybe
@@ -163,12 +155,7 @@ addUrlToFeed' feedHash url = do
          in insert_ (Url id url)
     else return ()
 
-
-deleteUrlFromFeed myConnectInfo feedHash urlId = do
-  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
-    runSqlConn (deleteUrlFromFeed' feedHash urlId) connection
-
-deleteUrlFromFeed' feedHash urlId = do
+deleteUrlFromFeed feedHash urlId = do
   feedEntityMaybe <- getFeedInfo feedHash
   let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
   if isJust feedIdMaybe
@@ -176,10 +163,8 @@ deleteUrlFromFeed' feedHash urlId = do
           in deleteWhere [UrlFeedId ==. id, UrlId ==. urlId]
     else return ()
 
-urlsForFeed myConnectInfo feedHash =
-  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
-    runSqlConn (urlsForFeed' feedHash) connection
 
+urlsForFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m [Text]
 urlsForFeed' feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
@@ -227,20 +212,16 @@ getFeedInfo :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlP
 getFeedInfo feedHash =
     selectFirst [FeedInfoHash ==. feedHash] []
 
-createFeedInfo' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlPersistT m String
-createFeedInfo' = do
+createFeedInfo :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlPersistT m String
+createFeedInfo = do
   newUuid <- fmap toText $ liftIO V4.nextRandom
   newHash <- liftIO getRandomHash
   let newFeedInfo = FeedInfo newUuid newHash
   key <- insert newFeedInfo
   return $ T.unpack newHash
 
-createFeedInfo :: ConnectInfo -> IO String
-createFeedInfo myConnectInfo = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn createFeedInfo'
-
-
-makeFeed' :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m (Maybe String)
-makeFeed' feedHash = do
+makeFeed :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => Text -> SqlPersistT m (Maybe String)
+makeFeed feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   urls <- urlsForFeed' feedHash
   if isJust feedEntityMaybe
@@ -257,10 +238,5 @@ makeFeed' feedHash = do
       return $ Just (prettyPrintFeed feed)
    else return Nothing
 
-makeFeed :: ConnectInfo -> Text -> IO (Maybe String)
-makeFeed myConnectInfo feedHash = runStderrLoggingT $ withMySQLConn myConnectInfo $ runSqlConn (makeFeed' feedHash)
-
-migration :: ConnectInfo -> IO ()
-migration myConnectInfo =
-  runStderrLoggingT $ withMySQLConn myConnectInfo $ \connection ->
-  runSqlConn (runMigration migrateAll) connection
+migration :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlPersistT m ()
+migration  = runMigration migrateAll

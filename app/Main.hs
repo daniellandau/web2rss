@@ -19,6 +19,7 @@
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE ViewPatterns      #-}
+{-# LANGUAGE FlexibleContexts  #-}
 module Main where
 
 import Lib
@@ -28,11 +29,13 @@ import Data.Text (Text, pack)
 import Data.Maybe
 import Control.Applicative ((<$>))
 import System.Environment
+import Control.Monad.Logger (runStderrLoggingT)
 import Yesod
 
 data Web2Rss = Web2Rss
-    { connectInfo :: ConnectInfo
-    , sourceCodeUrl :: Text
+    { connectInfo    :: ConnectInfo
+    , connectionPool :: ConnectionPool
+    , sourceCodeUrl  :: Text
     }
 
 mkYesod "Web2Rss" [parseRoutes|
@@ -67,7 +70,7 @@ getMainR = do
 getFeedR :: Text -> Handler TypedContent
 getFeedR hash = do
   settings <- getYesod
-  feedTextMaybe <- liftIO $ makeFeed (connectInfo settings) hash
+  feedTextMaybe <- run settings $ makeFeed hash
   if isJust feedTextMaybe
     then return $ TypedContent contentTypeAtom $ toContent $ fromJust feedTextMaybe
     else notFound
@@ -75,11 +78,12 @@ getFeedR hash = do
 postFeedsR :: Handler TypedContent
 postFeedsR = do
   settings <- getYesod
-  key <- liftIO $ createFeedInfo $ connectInfo settings
+  key <- run settings createFeedInfo
   return $ TypedContent contentTypeJson $ toContent ("{'key':'"++key++"'}")
 
 data FooUrl = FooUrl { url :: Text }
 
+run settings = runStderrLoggingT . (flip runSqlPool $ connectionPool settings)
 
 instance FromJSON FooUrl where
   parseJSON (Object o) = FooUrl <$> o .: "url"
@@ -87,19 +91,23 @@ instance FromJSON FooUrl where
 postFeedUrlsR :: Text -> Handler TypedContent
 postFeedUrlsR hash = do
   settings <- getYesod
-  exists <- hasFeed (connectInfo settings) hash
+  exists <- run settings $ hasFeed hash
   FooUrl url <- requireJsonBody :: Handler FooUrl
   if exists
     then do
-      addUrlToFeed (connectInfo settings) hash url
-      return $ TypedContent contentTypeTextPlain $ toContent $ pack "ok"
+      run settings $ addUrlToFeed hash url
+      ok
     else notFound
+
+
+ok :: Handler TypedContent
+ok = return . TypedContent contentTypeTextPlain . toContent . pack $ "ok"
 
 deleteFeedUrlR :: Text -> UrlId -> Handler TypedContent
 deleteFeedUrlR feedHash urlId = do
   settings <- getYesod
-  deleteUrlFromFeed (connectInfo settings) feedHash urlId
-  return . TypedContent contentTypeTextPlain . toContent . pack $ "ok"
+  run settings (deleteUrlFromFeed feedHash urlId)
+  ok
 
 main :: IO ()
 main = do
@@ -112,5 +120,7 @@ main = do
                                        , connectPassword = maybe "" id password
                                        , connectDatabase = maybe "web2rss" id db
                                        }
-  migration connectInfo
-  warp port $ Web2Rss connectInfo sourceCodeUrl
+  pool <- runStderrLoggingT $ createMySQLPool connectInfo 2
+  let settings = Web2Rss connectInfo pool sourceCodeUrl
+  run settings migration
+  warp port $ settings
