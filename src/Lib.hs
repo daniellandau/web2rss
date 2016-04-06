@@ -46,7 +46,9 @@ import Data.Time.Format
 import qualified System.Locale as Locale
 import Data.Text as T (Text, pack, unpack)
 import Control.Monad.IO.Class  (liftIO)
-import Control.Monad.Logger (runStderrLoggingT)
+import Control.Monad.Logger
+import Control.Monad.Trans.Except
+import Control.Monad.Trans
 import Text.Feed.Constructor
 import Text.Feed.Export
 import Text.XML.Light.Output
@@ -143,6 +145,8 @@ prettyPrintDiff old new =
 parseFromSaved :: Page -> B.ByteString
 parseFromSaved page = Lib.parse . responseFromPage $ page
 
+throw reason = lift . lift . throwE $ reason
+
 hasFeed feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   return $ isJust feedEntityMaybe
@@ -153,7 +157,7 @@ addUrlToFeed feedHash url = do
   if isJust feedIdMaybe
     then let id = fromJust feedIdMaybe
          in insert_ (Url id url)
-    else return ()
+    else throw "aargh, you should not try to add urls to feeds that do not exist"
 
 deleteUrlFromFeed feedHash urlId = do
   feedEntityMaybe <- getFeedInfo feedHash
