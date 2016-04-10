@@ -21,6 +21,7 @@
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE RankNTypes                 #-}
 
 
 module Lib
@@ -79,7 +80,6 @@ fetch url = do
   let body = L.toStrict $ responseBody response
   return $ Response body contentType
 
-
 parse :: Lib.Response -> B.ByteString
 parse response =
   if B.isPrefixOf "text/html" (contentType response)
@@ -89,7 +89,6 @@ parse response =
            texts = filter isTagText withoutScripts
        in innerText texts
   else body response
-
 
 getBody :: [Tag B.ByteString] -> [Tag B.ByteString]
 getBody tags = dropWhile (~/= body) tags
@@ -145,6 +144,7 @@ prettyPrintDiff old new =
 parseFromSaved :: Page -> B.ByteString
 parseFromSaved page = Lib.parse . responseFromPage $ page
 
+throw :: Monad m => Text -> MyMonadStack m a
 throw reason = lift . lift . throwE $ reason
 
 hasFeed feedHash = do
@@ -152,11 +152,14 @@ hasFeed feedHash = do
   return $ isJust feedEntityMaybe
 
 
+type MyMonadStack m = SqlPersistT (LoggingT (ExceptT Text m))
+
+idForHash :: (MonadBaseControl IO m, MonadIO m) => Text -> MyMonadStack m (Key FeedInfo)
 idForHash feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   let feedIdMaybe = fmap (\(Entity key _) -> key) feedEntityMaybe
   maybe
-    (throw "The given hash does not match any existing feed")
+    (throw $ T.pack "The given hash does not match any existing feed")
     return feedIdMaybe
 
 addUrlToFeed feedHash url = do
@@ -167,8 +170,7 @@ deleteUrlFromFeed feedHash urlId = do
   id <- idForHash feedHash
   deleteWhere [UrlFeedId ==. id, UrlId ==. urlId]
 
-
-urlsForFeed' feedHash = do
+urlsForFeed feedHash = do
   id <- idForHash feedHash
   urlEntities <- selectList [UrlFeedId ==. id] []
   let urls = map (\(Entity _ (Url _ url)) -> url) urlEntities
@@ -215,7 +217,7 @@ createFeedInfo = do
   newUuid <- fmap toText $ liftIO V4.nextRandom
   newHash <- liftIO getRandomHash
   let newFeedInfo = FeedInfo newUuid newHash
-  key <- insert newFeedInfo
+  insert_ newFeedInfo
   return $ T.unpack newHash
 
 require msg x =
@@ -224,7 +226,7 @@ require msg x =
 makeFeed feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   (Entity key feedInfo) <- require "feed not found" feedEntityMaybe
-  urls <- urlsForFeed' feedHash
+  urls <- urlsForFeed feedHash
   items <- mapM (itemsForUrl key) urls >>= return . concat
   let feed = withFeedItems items $ feedFromAtom $
         AFeed.nullFeed ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
