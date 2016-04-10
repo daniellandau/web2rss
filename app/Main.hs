@@ -81,19 +81,19 @@ postFeedsR = do
   key <- run settings createFeedInfo
   return $ TypedContent contentTypeJson $ toContent ("{'key':'"++key++"'}")
 
-data FooUrl = FooUrl { url :: Text }
+data JsonUrl = JsonUrl { url :: Text }
 
 run :: (MonadBaseControl IO m, MonadIO m) =>
      Web2Rss -> SqlPersistT (Control.Monad.Logger.LoggingT m) a -> m a
 run settings = runStderrLoggingT . (flip runSqlPool $ connectionPool settings)
 
-instance FromJSON FooUrl where
-  parseJSON (Object o) = FooUrl <$> o .: "url"
+instance FromJSON JsonUrl where
+  parseJSON (Object o) = JsonUrl <$> o .: "url"
 
 postFeedUrlsR :: Text -> Handler TypedContent
 postFeedUrlsR hash = do
   settings <- getYesod
-  FooUrl url <- requireJsonBody :: Handler FooUrl
+  JsonUrl url <- requireJsonBody
   runError $ run settings $ addUrlToFeed hash url
   ok
 
@@ -109,7 +109,7 @@ ok = return . TypedContent contentTypeTextPlain . toContent . pack $ "ok"
 putFeedUrlR :: Text -> UrlId -> Handler TypedContent
 putFeedUrlR hash urlId = do
   settings <- getYesod
-  FooUrl url <- requireJsonBody :: Handler FooUrl
+  JsonUrl url <- requireJsonBody :: Handler JsonUrl
   runError $ run settings $ modifyUrlInFeed hash urlId url
   ok
 
@@ -125,7 +125,7 @@ main = do
   db <- lookupEnv "DB"
   password <- lookupEnv "PASSWORD"
   port <- maybe 3000 read <$> lookupEnv "PORT"
-  sourceCodeUrl <- fmap pack $ maybe "https://github.com/daniellandau/web2rss" identity <$> lookupEnv "SOURCE_CODE_URL"
+  sourceCodeUrl <- maybe "https://github.com/daniellandau/web2rss" pack <$> lookupEnv "SOURCE_CODE_URL"
   let connectInfo = defaultConnectInfo { connectUser = maybe "web2rss" identity user
                                        , connectPassword = maybe "" identity password
                                        , connectDatabase = maybe "web2rss" identity db
