@@ -31,9 +31,9 @@ module Lib
     -- )
     where
 
+import MyPrelude
 import Network.HTTP.Conduit
 import Text.HTML.TagSoup
-import Text.HTML.TagSoup.Match
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as Char8
@@ -44,9 +44,8 @@ import Database.Persist.MySQL
 import Database.Persist.TH
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Time.Format
-import qualified System.Locale as Locale
 import Data.Text as T (Text, pack, unpack)
-import Control.Monad.IO.Class  (liftIO)
+import Control.Monad.IO.Class  (liftIO, MonadIO)
 import Control.Monad.Logger
 import Control.Monad.Trans.Except
 import Control.Monad.Trans
@@ -62,9 +61,7 @@ import qualified Text.Feed.Types as FTypes
 import Network.HTTP.Types.Header
 import Crypto.Random (getSystemDRG, randomBytesGenerate)
 import Crypto.Hash (Digest, MD5, hash)
-import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Control (MonadBaseControl)
-import Control.Monad.Logger (MonadLogger)
 import Data.Algorithm.Diff
 import Data.Algorithm.DiffOutput
 
@@ -76,9 +73,9 @@ fetch url = do
   manager <- newManager tlsManagerSettings
   response <- httpLbs request manager
   let headers = responseHeaders response
-  let contentType = maybe "text/html" snd $ find ((== hContentType ) . fst) headers
-  let body = L.toStrict $ responseBody response
-  return $ Response body contentType
+  let contentType' = maybe "text/html" snd $ find ((== hContentType ) . fst) headers
+  let body' = L.toStrict $ responseBody response
+  return $ Response body' contentType'
 
 parse :: Lib.Response -> B.ByteString
 parse response =
@@ -236,7 +233,7 @@ makeFeed feedHash = do
   let feed = withFeedItems items $ feedFromAtom $
         AFeed.nullFeed ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
         (AFeed.TextString "Changes in the followed pages")
-        (maybe "" id (listToMaybe . reverse . sort . (map (\(FTypes.AtomItem entry) ->
+        (maybe "" identity (listToMaybe . reverse . sort . (map (\(FTypes.AtomItem entry) ->
                                             AFeed.entryUpdated entry)) $ items) )
   return $ prettyPrintFeed feed
 

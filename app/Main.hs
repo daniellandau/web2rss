@@ -23,6 +23,7 @@
 module Main where
 
 import Lib
+import MyPrelude
 import Data.Aeson.Encode
 import Database.Persist.MySQL
 import Data.Text (Text, pack)
@@ -124,10 +125,10 @@ main = do
   db <- lookupEnv "DB"
   password <- lookupEnv "PASSWORD"
   port <- maybe 3000 read <$> lookupEnv "PORT"
-  sourceCodeUrl <- fmap pack $ maybe "https://github.com/daniellandau/web2rss" id <$> lookupEnv "SOURCE_CODE_URL"
-  let connectInfo = defaultConnectInfo { connectUser = maybe "web2rss" id user
-                                       , connectPassword = maybe "" id password
-                                       , connectDatabase = maybe "web2rss" id db
+  sourceCodeUrl <- fmap pack $ maybe "https://github.com/daniellandau/web2rss" identity <$> lookupEnv "SOURCE_CODE_URL"
+  let connectInfo = defaultConnectInfo { connectUser = maybe "web2rss" identity user
+                                       , connectPassword = maybe "" identity password
+                                       , connectDatabase = maybe "web2rss" identity db
                                        }
   pool <- runStderrLoggingT $ createMySQLPool connectInfo 2
   let settings = Web2Rss connectInfo pool sourceCodeUrl
