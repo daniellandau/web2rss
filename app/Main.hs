@@ -43,7 +43,7 @@ mkYesod "Web2Rss" [parseRoutes|
 /                           MainR         GET
 /feeds/#Text                FeedR         GET
 /feeds/#Text/url            FeedUrlsR     POST
-/feeds/#Text/url/#UrlId     FeedUrlR      DELETE
+/feeds/#Text/url/#UrlId     FeedUrlR      DELETE PUT
 /feeds                      FeedsR        POST
 |]
 
@@ -104,6 +104,13 @@ runError a = do
 
 ok :: Handler TypedContent
 ok = return . TypedContent contentTypeTextPlain . toContent . pack $ "ok"
+
+putFeedUrlR :: Text -> UrlId -> Handler TypedContent
+putFeedUrlR hash urlId = do
+  settings <- getYesod
+  FooUrl url <- requireJsonBody :: Handler FooUrl
+  runError $ run settings $ modifyUrlInFeed hash urlId url
+  ok
 
 deleteFeedUrlR :: Text -> UrlId -> Handler TypedContent
 deleteFeedUrlR feedHash urlId = do

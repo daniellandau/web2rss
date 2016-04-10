@@ -166,6 +166,11 @@ addUrlToFeed feedHash url = do
   id <- idForHash feedHash
   insert_ (Url id url)
 
+modifyUrlInFeed feedHash urlId url = do
+  id <- idForHash feedHash
+  updateWhere [UrlFeedId ==. id, UrlId ==. urlId] [UrlUrl =. url]
+  return ()
+
 deleteUrlFromFeed feedHash urlId = do
   id <- idForHash feedHash
   deleteWhere [UrlFeedId ==. id, UrlId ==. urlId]
