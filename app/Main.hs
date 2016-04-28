@@ -33,12 +33,20 @@ import System.Environment
 import Control.Monad.Logger
 import Control.Monad.Trans.Except
 import Yesod
+import Text.Jasmine         (minifym)
+import Yesod.Default.Util   (addStaticContentExternal)
+import Yesod.Default.Config2
+import Yesod.Static --(staticFiles, Static, base64md5, StaticRoute)
+
+staticFiles ("static")
 
 data Web2Rss = Web2Rss
     { connectInfo    :: ConnectInfo
     , connectionPool :: ConnectionPool
     , sourceCodeUrl  :: Text
+    , staticSettings :: Static
     }
+
 
 mkYesod "Web2Rss" [parseRoutes|
 /                           MainR         GET
@@ -46,9 +54,17 @@ mkYesod "Web2Rss" [parseRoutes|
 /feeds/#Text/url            FeedUrlsR     POST
 /feeds/#Text/url/#UrlId     FeedUrlR      DELETE PUT
 /feeds                      FeedsR        POST
+/static                     StaticR       Static staticSettings
 |]
 
-instance Yesod Web2Rss
+instance Yesod Web2Rss where
+  addStaticContent ext mime content = do
+    settings <- getYesod
+    addStaticContentExternal
+      minifym genFileName "static" (StaticR . flip StaticRoute [])
+      ext mime content
+      where
+        genFileName lbs = "autogen-" ++ base64md5 lbs
 
 contentTypeAtom :: ContentType
 contentTypeAtom = "application/atom+xml"
@@ -63,10 +79,14 @@ getMainR :: Handler Html
 getMainR = do
   settings <- getYesod
   let url = sourceCodeUrl settings
-  defaultLayout [whamlet|
-     <h1>Web2RSS
-     <p>This web site is free software under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-     <p>You can find the source code at <a href="#{url}">#{url}</a>.
+  defaultLayout $ do
+    addScript $ StaticR index_js
+    [whamlet|
+            <h1>Web2RSS
+            <p>This web site is free software under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+            <p>You can find the source code at <a href="#{url}">#{url}</a>.
+            <h1>Foo
+            <div #app>
 |]
 
 getFeedR :: Text -> Handler TypedContent
@@ -131,6 +151,7 @@ main = do
                                        , connectDatabase = maybe "web2rss" identity db
                                        }
   pool <- runStderrLoggingT $ createMySQLPool connectInfo 2
-  let settings = Web2Rss connectInfo pool sourceCodeUrl
+  staticSettings <- static "static"
+  let settings = Web2Rss connectInfo pool sourceCodeUrl staticSettings
   run settings migration
   warp port $ settings
