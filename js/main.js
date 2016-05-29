@@ -1,5 +1,5 @@
 import Cycle from '@cycle/core';
-import {div, dl, dd, dt, p, button, h1, h4, a, input, makeDOMDriver} from '@cycle/dom';
+import {label, div, dl, dd, dt, p, button, h1, h4, a, input, makeDOMDriver} from '@cycle/dom';
 import { Observable} from 'rx';
 import {makeHTTPDriver} from '@cycle/http';
 
@@ -47,10 +47,10 @@ function main(sources) {
       } else if (update && update.newUrl) {
         oldState.urls.push(update.newUrl);
         return oldState;
-      } else if (update && update.newUrlInput) {
+      } else if (update && update.newUrlInput !== undefined) {
         oldState.newUrlInput = update.newUrlInput;
         return oldState;
-      } else if (update && update.feedHashInput) {
+      } else if (update && update.feedHashInput !== undefined) {
         oldState.feedHashInput = update.feedHashInput;
         return oldState;
       } else {
@@ -59,9 +59,10 @@ function main(sources) {
     })
     .share();
 
+  const stateWithFeed$ = state$.filter(state => state.feedHashInput.length > 0)
 
   const getUrls$ = sources.DOM.select('.get-feed').events('click')
-    .withLatestFrom(state$, (x, state) => {
+    .withLatestFrom(stateWithFeed$, (x, state) => {
       return {
         url: FEEDSURL({feedHash: state.feedHashInput}),
         method: 'GET'
@@ -69,7 +70,7 @@ function main(sources) {
     })
 
   const deleteUrl$ = sources.DOM.select('.delete-url').events('click')
-    .withLatestFrom(state$, (ev, state) => {
+    .withLatestFrom(stateWithFeed$, (ev, state) => {
       const id = ev.target.getAttribute('data-id');
       return {
         url: FEEDURL({feedHash: state.feedHashInput, urlId: id}),
@@ -78,7 +79,7 @@ function main(sources) {
     });
 
   const addUrl$ = sources.DOM.select('.add-input-button').events('click')
-    .withLatestFrom(state$, (x, state) => {
+    .withLatestFrom(stateWithFeed$, (x, state) => {
       return {
         url: FEEDSURL({feedHash: state.feedHashInput}),
         method: 'POST',
@@ -87,18 +88,20 @@ function main(sources) {
     });
 
   const vtree$ = state$.map((state) => {
-    const urls = state.urls;
+    const urls = state.urls
+    const getFeedEnabled = state.feedHashInput.length > 0
+    const addUrlEnabled = getFeedEnabled && state.newUrlInput.length > 0
     return div('.container', [
-      p('Input feed hash'),
+      label('Feed hash'),
       input('.feed-hash'),
-      button('.get-feed', 'Get URLs'),
+      button({ className: 'get-feed', attributes: getFeedEnabled ? {} : { disabled: true} }, 'Get URLs'),
       div('.feed', [
         !urls ? p('nothing yet') : div('.urls-details', urls.map(url => {
           return [p("Url"), p(url.url), button({ className: 'delete-url', attributes: {'data-id': url.id} }, 'delete')];
         })),
-        p('Add url'),
+        label('Add url'),
         input('.add-input-text'),
-        button('.add-input-button', 'Add URL')
+        button({className: 'add-input-button', attributes: addUrlEnabled ? {} : { disabled: true} }, 'Add URL')
       ])
     ])
   });
