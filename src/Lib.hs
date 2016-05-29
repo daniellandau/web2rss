@@ -129,7 +129,6 @@ makeItem url when itemId content = atomEntryToItem $
 prettyPrintFeed :: Feed -> String
 prettyPrintFeed = ppElement . xmlFeed
 
-
 prettyPrintDiff :: B.ByteString -> B.ByteString -> String
 prettyPrintDiff old new =
   ppDiff diffs
@@ -175,8 +174,8 @@ deleteUrlFromFeed feedHash urlId = do
 urlsForFeed feedHash = do
   id <- idForHash feedHash
   urlEntities <- selectList [UrlFeedId ==. id] []
-  let urls = map (\(Entity _ (Url _ url)) -> url) urlEntities
-  return urls
+  let urlIdPairs = map (\(Entity key (Url _ url)) -> ( url, key )) urlEntities
+  return urlIdPairs
 
 responseFromPage page = Lib.Response (pageBody page) (pageContentType page)
 
@@ -228,7 +227,7 @@ require msg x =
 makeFeed feedHash = do
   feedEntityMaybe <- getFeedInfo feedHash
   (Entity key feedInfo) <- require "feed not found" feedEntityMaybe
-  urls <- urlsForFeed feedHash
+  urls <- map fst <$> urlsForFeed feedHash
   items <- mapM (itemsForUrl key) urls >>= return . concat
   let feed = withFeedItems items $ feedFromAtom $
         AFeed.nullFeed ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))

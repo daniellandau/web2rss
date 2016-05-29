@@ -20,11 +20,13 @@
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE ViewPatterns      #-}
 {-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Main where
 
 import Lib
 import MyPrelude
 import Data.Aeson.Encode
+import Data.Aeson.Types
 import Database.Persist.MySQL
 import Data.Text (Text, pack)
 import Data.Maybe
@@ -37,6 +39,10 @@ import Text.Jasmine         (minifym)
 import Yesod.Default.Util   (addStaticContentExternal)
 import Yesod.Default.Config2
 import Yesod.Static --(staticFiles, Static, base64md5, StaticRoute)
+import Text.Julius
+import Database.Persist.Class
+import qualified Data.Vector as V
+import GHC.Int
 
 staticFiles ("static")
 
@@ -51,10 +57,11 @@ data Web2Rss = Web2Rss
 mkYesod "Web2Rss" [parseRoutes|
 /                           MainR         GET
 /feeds/#Text                FeedR         GET
-/feeds/#Text/url            FeedUrlsR     POST
+/feeds/#Text/url            FeedUrlsR     POST GET
 /feeds/#Text/url/#UrlId     FeedUrlR      DELETE PUT
 /feeds                      FeedsR        POST
 /static                     StaticR       Static staticSettings
+/urls                       UrlsR         GET
 |]
 
 instance Yesod Web2Rss where
@@ -75,17 +82,26 @@ contentTypeJson = "application/json"
 contentTypeTextPlain :: ContentType
 contentTypeTextPlain = "text/plain"
 
+getUrlsR :: Handler Javascript
+getUrlsR = do
+  render <- getUrlRenderParams
+  let js = [julius|
+                  var FEEDSURL = _.template(decodeURI("@{FeedUrlsR "<%= feedHash %>"}"));
+                  var FEEDURL  = _.template(decodeURI("@{FeedUrlR  "<%= feedHash %>" (toSqlKey 123)}").replace("123", "<%= urlId %>")); |]
+  return $ js render
+
 getMainR :: Handler Html
 getMainR = do
   settings <- getYesod
   let url = sourceCodeUrl settings
   defaultLayout $ do
+    addScript $ StaticR lodash_js
+    addScript $ UrlsR
     addScript $ StaticR index_js
     [whamlet|
             <h1>Web2RSS
             <p>This web site is free software under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
             <p>You can find the source code at <a href="#{url}">#{url}</a>.
-            <h1>Foo
             <div #app>
 |]
 
@@ -101,25 +117,35 @@ postFeedsR = do
   key <- run settings createFeedInfo
   return $ TypedContent contentTypeJson $ toContent ("{'key':'"++key++"'}")
 
-data JsonUrl = JsonUrl { url :: Text }
+data JsonUrl = JsonUrl { url :: Text, id :: Int64 }
+
+instance FromJSON JsonUrl where
+  parseJSON (Object o) = JsonUrl <$> o .: "url" <*> o .: "id"
+
+instance ToJSON JsonUrl where
+  toJSON (JsonUrl url id) = object ["url" .= url, "id" .= id]
 
 run :: (MonadBaseControl IO m, MonadIO m) =>
      Web2Rss -> SqlPersistT (Control.Monad.Logger.LoggingT m) a -> m a
 run settings = runStderrLoggingT . (flip runSqlPool $ connectionPool settings)
 
-instance FromJSON JsonUrl where
-  parseJSON (Object o) = JsonUrl <$> o .: "url"
+getFeedUrlsR :: Text -> Handler Value
+getFeedUrlsR hash = do
+  settings <- getYesod
+  urls <- runError $ run settings $ urlsForFeed hash
+  return  $ Array . V.fromList $ map toJSON $ map (\(url, key) -> JsonUrl url (fromSqlKey key)) urls
+
 
 postFeedUrlsR :: Text -> Handler TypedContent
 postFeedUrlsR hash = do
   settings <- getYesod
-  JsonUrl url <- requireJsonBody
+  JsonUrl url _ <- requireJsonBody
   runError $ run settings $ addUrlToFeed hash url
   ok
 
 runError a = do
-  foo <- runExceptT a
-  case foo of
+  js <- runExceptT a
+  case js of
     Left msg -> permissionDenied msg
     Right x  -> return x
 
@@ -129,7 +155,7 @@ ok = return . TypedContent contentTypeTextPlain . toContent . pack $ "ok"
 putFeedUrlR :: Text -> UrlId -> Handler TypedContent
 putFeedUrlR hash urlId = do
   settings <- getYesod
-  JsonUrl url <- requireJsonBody :: Handler JsonUrl
+  JsonUrl url _ <- requireJsonBody :: Handler JsonUrl
   runError $ run settings $ modifyUrlInFeed hash urlId url
   ok
 

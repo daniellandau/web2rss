@@ -50,10 +50,14 @@ executable web2rss-exe
                      , text
                      , hjsmin
                      , yesod-static
+                     , yesod-core
+                     , shakespeare
+                     , vector
                      , transformers
                      , monad-logger
                      , yesod
                      , aeson
+                     , persistent
                      , monads-tf
   default-language:    Haskell2010
 

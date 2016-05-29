@@ -107,12 +107,6 @@ the terms of the GNU Affero General Public License as published by the Free
 Software Foundation, either version 3 of the License, or (at your option) any
 later version.
 
-Note that currently this program does not "prominently offer all users
-interacting with it remotely through a computer network (if your version
-supports such interaction) an opportunity to receive the Corresponding Source"
-as required by the license, so that will need to be implemented first by me or
-by you in order for you to be able to provide access to others.
-
 ## Aknowledgements
 
 I thank my employer [Futurice](https://github.com/futurice/) for providing
