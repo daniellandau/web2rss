@@ -51,6 +51,7 @@ data Web2Rss = Web2Rss
     , connectionPool :: ConnectionPool
     , sourceCodeUrl  :: Text
     , staticSettings :: Static
+    , appRoot        :: Text
     }
 
 
@@ -65,6 +66,7 @@ mkYesod "Web2Rss" [parseRoutes|
 |]
 
 instance Yesod Web2Rss where
+  approot = ApprootMaster $ appRoot
   addStaticContent ext mime content = do
     settings <- getYesod
     addStaticContentExternal
@@ -172,12 +174,13 @@ main = do
   password <- lookupEnv "PASSWORD"
   port <- maybe 3000 read <$> lookupEnv "PORT"
   sourceCodeUrl <- maybe "https://github.com/daniellandau/web2rss" pack <$> lookupEnv "SOURCE_CODE_URL"
+  appRoot <- maybe "/" pack <$> lookupEnv "APPROOT"
   let connectInfo = defaultConnectInfo { connectUser = maybe "web2rss" identity user
                                        , connectPassword = maybe "" identity password
                                        , connectDatabase = maybe "web2rss" identity db
                                        }
   pool <- runStderrLoggingT $ createMySQLPool connectInfo 2
   staticSettings <- static "static"
-  let settings = Web2Rss connectInfo pool sourceCodeUrl staticSettings
+  let settings = Web2Rss connectInfo pool sourceCodeUrl staticSettings appRoot
   run settings migration
   warp port $ settings
