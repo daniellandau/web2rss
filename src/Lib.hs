@@ -123,7 +123,7 @@ format = formatTime defaultTimeLocale rfc822DateFormat
 
 makeItem :: Text -> UTCTime -> Text -> String -> Item
 makeItem url when itemId content = atomEntryToItem $
-  item { AFeed.entryContent = Just (AFeed.TextContent content), AFeed.entryLinks = [AFeed.nullLink (T.unpack url)] }
+  item { AFeed.entryContent = Just (AFeed.HTMLContent $ "<pre>" ++ content ++ "</pre>"), AFeed.entryLinks = [AFeed.nullLink (T.unpack url)] }
   where item = AFeed.nullEntry ("uurn:uuid:" ++ (T.unpack itemId)) (AFeed.TextString (T.unpack url ++ " has changed")) (format when)
 
 prettyPrintFeed :: Feed -> String
