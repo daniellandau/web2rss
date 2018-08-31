@@ -49,6 +49,7 @@ import Control.Monad.IO.Class  (liftIO, MonadIO)
 import Control.Monad.Logger
 import Control.Monad.Trans.Except
 import Control.Monad.Trans
+import HTMLEntities.Text as HText
 import Text.Feed.Constructor
 import Text.Feed.Export
 import Text.XML.Light.Output
@@ -123,7 +124,7 @@ format = formatTime defaultTimeLocale rfc822DateFormat
 
 makeItem :: Text -> UTCTime -> Text -> String -> Item
 makeItem url when itemId content = atomEntryToItem $
-  item { AFeed.entryContent = Just (AFeed.HTMLContent $ "<pre>" ++ content ++ "</pre>"), AFeed.entryLinks = [AFeed.nullLink (T.unpack url)] }
+  item { AFeed.entryContent = Just (AFeed.HTMLContent $ "<pre>" ++ T.unpack (HText.text (T.pack content)) ++ "</pre>"), AFeed.entryLinks = [AFeed.nullLink (T.unpack url)] }
   where item = AFeed.nullEntry ("uurn:uuid:" ++ (T.unpack itemId)) (AFeed.TextString (T.unpack url ++ " has changed")) (format when)
 
 prettyPrintFeed :: Feed -> String

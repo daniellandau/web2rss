@@ -26,6 +26,7 @@ library
                      , persistent-template
                      , time
                      , text
+                     , html-entities
                      , monad-logger
                      , transformers
                      , feed
