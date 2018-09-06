@@ -42,6 +42,7 @@ import Data.Maybe
 import Database.Persist.Quasi
 import Database.Persist.MySQL
 import Database.Persist.TH
+import Data.List (sortBy)
 import Data.Time.Clock (UTCTime, getCurrentTime)
 import Data.Time.Format
 import Data.Text as T (Text, pack, unpack)
@@ -122,8 +123,8 @@ getSaved url = do
 format :: UTCTime -> String
 format = formatTime defaultTimeLocale rfc822DateFormat
 
-makeItem :: Text -> UTCTime -> Text -> String -> Item
-makeItem url when itemId content = atomEntryToItem $
+makeItem :: (Text , UTCTime , Text , String) -> Item
+makeItem (url, when, itemId, content) = atomEntryToItem $
   item { AFeed.entryContent = Just (AFeed.HTMLContent $ "<pre>" ++ T.unpack (HText.text (T.pack content)) ++ "</pre>"), AFeed.entryLinks = [AFeed.nullLink (T.unpack url)] }
   where item = AFeed.nullEntry ("uurn:uuid:" ++ (T.unpack itemId)) (AFeed.TextString (T.unpack url ++ " has changed")) (format when)
 
@@ -180,7 +181,6 @@ urlsForFeed feedHash = do
 
 responseFromPage page = Lib.Response (pageBody page) (pageContentType page)
 
-itemsForUrl :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => FeedInfoId -> Text -> SqlPersistT m [Item]
 itemsForUrl feedId url = do
   response <- liftIO $ fetch url
   let content = Lib.parse response
@@ -191,7 +191,7 @@ itemsForUrl feedId url = do
   let contents = map parseFromSaved reverseSaved
   let contentPairs = zip ("" : contents) contents
   let diffs = map (\(_1, _2) -> prettyPrintDiff _1 _2) contentPairs
-  let oldItems = reverse $ map (\(page, diff) -> makeItem url (pageFetched page) (pageUuid page) diff) (zip reverseSaved diffs)
+  let oldItems = reverse $ map (\(page, diff) -> (url, (pageFetched page), (pageUuid page), diff)) (zip reverseSaved diffs)
   let isSame = maybe False (== content) (fmap parseFromSaved latestSaved)
   if isSame
     then return oldItems
@@ -200,7 +200,7 @@ itemsForUrl feedId url = do
       let oldContent = maybe "" parseFromSaved latestSaved
       let diffContent = (prettyPrintDiff oldContent content)
       insert_ (Page url (body response) (contentType response) now (toText itemId) feedId)
-      return (makeItem url now (toText itemId) diffContent : oldItems)
+      return ((url, now, (toText itemId), diffContent) : oldItems)
 
 getRandomHash :: IO Text
 getRandomHash = do
@@ -230,11 +230,11 @@ makeFeed feedHash = do
   (Entity key feedInfo) <- require "feed not found" feedEntityMaybe
   urls <- map fst <$> urlsForFeed feedHash
   items <- mapM (itemsForUrl key) urls >>= return . concat
-  let feed = withFeedItems items $ feedFromAtom $
+  let feed = withFeedItems (map makeItem (sortBy (\(_, a, _, _) (_, b, _, _) -> compare b a) items)) $ feedFromAtom $
         AFeed.nullFeed ("uurn:uuid:" ++ T.unpack (feedInfoUuid feedInfo))
         (AFeed.TextString "Changes in the followed pages")
         (maybe "" identity (listToMaybe . reverse . sort . (map (\(FTypes.AtomItem entry) ->
-                                            AFeed.entryUpdated entry)) $ items) )
+                                            AFeed.entryUpdated entry)) $ (map makeItem items)) )
   return $ prettyPrintFeed feed
 
 migration :: (MonadBaseControl IO m, MonadIO m, MonadLogger m) => SqlPersistT m ()
